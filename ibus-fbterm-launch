@@ -12,7 +12,7 @@ if [ ${#TTY} -eq ${#TTY_NUM} ]; then
 	exit 1
 fi
 
-eval `dbus-launch --auto-syntax`
+eval `dbus-launch --sh-syntax`
 
 export DISPLAY=:9${TTY_NUM}.0
 
