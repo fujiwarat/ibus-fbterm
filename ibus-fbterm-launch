@@ -1,0 +1,25 @@
+#!/bin/bash
+
+`hash fbterm ibus-fbterm dbus-launch ibus-daemon` || exit 1
+
+TTY=`tty`
+
+TTY_NUM=${TTY#/dev/tty}
+[ ${#TTY} -eq ${#TTY_NUM} ] && TTY_NUM=${TTY#/dev/vc/}
+
+if [ ${#TTY} -eq ${#TTY_NUM} ]; then
+	echo "stdin isn't a interactive tty!"
+	exit 1
+fi
+
+eval `dbus-launch --auto-syntax`
+
+export DISPLAY=:9${TTY_NUM}.0
+
+ibus-daemon -p disable &
+IBUS_DAEMON_PID=$!
+
+fbterm -i ibus-fbterm "$@"
+
+kill $IBUS_DAEMON_PID
+kill $DBUS_SESSION_BUS_PID
