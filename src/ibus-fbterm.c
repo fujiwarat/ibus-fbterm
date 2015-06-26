@@ -119,13 +119,17 @@ static void im_active()
 	debug("im active\n");
 	modifier_state = 0;
 	init_keycode_state();
+#if ! IBUS_CHECK_VERSION (1, 4, 99)
 	ibus_input_context_enable(ibus_ctx);
+#endif
 }
 
 static void im_deactive()
 {
 	debug("im deactive\n");
+#if ! IBUS_CHECK_VERSION (1, 4, 99)
 	ibus_input_context_disable(ibus_ctx);
+#endif
 
 	auxiliary_text_win.w = 0;
 	lookup_table_win.w = 0;
@@ -240,7 +244,11 @@ int main()
 					 "signal::register-properties", slot_register_properties, NULL,
 					 "signal::update-property", slot_update_property, NULL,
 					 NULL);
+#if IBUS_CHECK_VERSION (1, 4, 99)
+	ibus_input_context_set_capabilities(ibus_ctx, IBUS_CAP_AUXILIARY_TEXT | IBUS_CAP_LOOKUP_TABLE | IBUS_CAP_PROPERTY | IBUS_CAP_FOCUS);
+#else
 	ibus_input_context_set_capabilities(ibus_ctx, IBUS_CAP_AUXILIARY_TEXT | IBUS_CAP_LOOKUP_TABLE | IBUS_CAP_PROPERTY);
+#endif
 
 	register_im_callbacks(cbs);
 	connect_fbterm(1);

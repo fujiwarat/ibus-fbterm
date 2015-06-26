@@ -3,7 +3,7 @@ enum { AuxiliaryTextWin = 0, LookupTableWin, StatusBarWin };
 static unsigned short cursor_x, cursor_y;
 static Rectangle auxiliary_text_win, lookup_table_win, status_bar_win;
 
-static const Info info;
+static Info info;
 
 #define FW(x) ((x) * info.fontWidth)
 #define FH(y) ((y) * info.fontHeight)
@@ -212,7 +212,11 @@ static void calculate_status_win()
 		IBusProperty *prop = ibus_prop_list_get(property_list, i);
 		if (!prop) break;
 
+#if IBUS_CHECK_VERSION (1, 4, 0)
+		w += text_width(ibus_property_get_label(prop)->text);
+#else
 		w += text_width(prop->label->text);
+#endif
 	}
 
 	status_bar_win.x = cursor_x;
@@ -238,8 +242,16 @@ static void draw_status_bar()
 		IBusProperty *prop = ibus_prop_list_get(property_list, i);
 		if (!prop) break;
 
+#if IBUS_CHECK_VERSION (1, 4, 0)
+		IBusText *text = ibus_property_get_label(prop);
+		draw_text(x, y, COLOR_FG, COLOR_BG,
+		          text->text,
+		          strlen(text->text));
+		x += FW(text_width(text->text));
+#else
 		draw_text(x, y, COLOR_FG, COLOR_BG, prop->label->text, strlen(prop->label->text));
 		x += FW(text_width(prop->label->text));
+#endif
 
 		char space = ' ';
 		draw_text(x, y, COLOR_FG, COLOR_BG, &space, 1);
