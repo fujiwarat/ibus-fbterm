@@ -1,7 +1,7 @@
-enum { AuxiliaryTextWin = 0, LookupTableWin, StatusBarWin };
+enum { AuxiliaryTextWin = 0, LookupTableWin, StatusBarWin, PreeditTextWin };
 
 static unsigned short cursor_x, cursor_y;
-static Rectangle auxiliary_text_win, lookup_table_win, status_bar_win;
+static Rectangle auxiliary_text_win, lookup_table_win, status_bar_win, preedit_text_win;
 
 static Info info;
 
@@ -128,7 +128,10 @@ static void calculate_lookup_win()
 	}
 
 	lookup_table_win.x = cursor_x;
-	lookup_table_win.y = get_cursor_y() + WIN_INTERVAL + GAP;
+	if (preedit_text_win.w)
+		lookup_table_win.y = get_cursor_y() + 2 * WIN_INTERVAL + GAP;
+	else
+		lookup_table_win.y = get_cursor_y() + WIN_INTERVAL + GAP;
 	lookup_table_win.w = FW(w + 3 * lookup_table->page_size) + 2 * MARGIN;
 	lookup_table_win.h = WIN_HEIGHT;
 
@@ -179,7 +182,10 @@ static void calculate_auxiliary_win()
 	}
 
 	auxiliary_text_win.x = cursor_x;
-	auxiliary_text_win.y = get_cursor_y() + GAP;
+	if (preedit_text_win.w)
+		auxiliary_text_win.y = get_cursor_y() + WIN_INTERVAL + GAP;
+	else
+		auxiliary_text_win.y = get_cursor_y() + GAP;
 	auxiliary_text_win.w = FW(text_width(auxiliary_text->text)) + 2 * MARGIN;
 	auxiliary_text_win.h = WIN_HEIGHT;
 
@@ -256,5 +262,88 @@ static void draw_status_bar()
 		char space = ' ';
 		draw_text(x, y, COLOR_FG, COLOR_BG, &space, 1);
 		x += FW(1);
+	}
+}
+
+static void calculate_preedit_win()
+{
+	if (!preedit_text) {
+		preedit_text_win.w = 0;
+		return;
+	}
+
+	preedit_text_win.x = cursor_x;
+	preedit_text_win.y = get_cursor_y() + GAP;
+	preedit_text_win.w = FW(text_width(preedit_text->text)) + 2 * MARGIN;
+	preedit_text_win.h = WIN_HEIGHT;
+
+	if (preedit_text_win.x + preedit_text_win.w > SW) {
+		if (preedit_text_win.w > SW) preedit_text_win.x = 0;
+		else preedit_text_win.x = SW - preedit_text_win.w;
+	}
+}
+
+static void draw_preedit_text()
+{
+	IBusAttribute *attr;
+	unsigned i, w = 0;
+	guint start_index = G_MAXUINT;
+	guint end_index = G_MAXUINT;
+
+	set_im_window(PreeditTextWin, preedit_text_win);
+	if (!preedit_text_win.w) return;
+
+	draw_margin(preedit_text_win, COLOR_BG);
+
+	if (preedit_text->attrs != 0)
+		for (i = 0; ; i++) {
+			attr = ibus_attr_list_get(preedit_text->attrs, i);
+			if (attr == 0)
+				break;
+			if (attr->type == IBUS_ATTR_TYPE_BACKGROUND) {
+				if ((attr->value & 0x00ffffff) > 0) {
+					start_index = attr->start_index;
+					end_index = attr->end_index;
+					break;
+				}
+			}
+		}
+
+	set_im_window(PreeditTextWin, preedit_text_win);
+	unsigned x = preedit_text_win.x + MARGIN, y = preedit_text_win.y + MARGIN;
+	if (start_index != G_MAXUINT && end_index > start_index) {
+		char *start_text;
+		char *end_text;
+		char *segment;
+		guint length;
+		if (start_index > 0) {
+			start_text = preedit_text->text;
+			end_text = g_utf8_offset_to_pointer(preedit_text->text,
+			                                    start_index);
+			length = end_text - start_text;
+			draw_text(x, y, COLOR_FG, COLOR_BG, start_text, length);
+			segment = g_strndup(start_text, length);
+			x += FW(text_width(segment));
+			g_free(segment);
+		}
+		start_text = g_utf8_offset_to_pointer (preedit_text->text,
+		                                      start_index);
+		end_text = g_utf8_offset_to_pointer(preedit_text->text,
+		                                    end_index);
+		length = end_text - start_text;
+		draw_text(x, y, COLOR_ACTIVE_CANDIDATE, COLOR_BG, start_text, length);
+		segment = g_strndup(start_text, length);
+		x += FW(text_width(segment));
+		g_free(segment);
+
+		start_text = g_utf8_offset_to_pointer(preedit_text->text,
+		                                      end_index);
+		end_text = preedit_text->text + strlen(preedit_text->text);
+		length = end_text - start_text;
+		if (length > 0)
+			draw_text(x, y, COLOR_FG, COLOR_BG, start_text, length);
+	} else {
+		draw_text(x, y, COLOR_FG, COLOR_BG,
+		          preedit_text->text, strlen(preedit_text->text));
 	}
 }

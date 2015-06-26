@@ -7,6 +7,7 @@
 #include "keycode.h"
 
 static IBusText *auxiliary_text;
+static IBusText *preedit_text;
 static IBusLookupTable *lookup_table;
 static IBusPropList *property_list;
 
@@ -41,12 +42,18 @@ static void slot_hide_lookup_table(IBusInputContext *ctx, gpointer data)
 static void slot_update_lookup_table(IBusInputContext *ctx, IBusLookupTable *table, gboolean visible, gpointer data)
 {
 	debug("update lookup table\n");
-	if (!visible) return;
 
-	if (lookup_table) g_object_unref(lookup_table);
+	if (lookup_table) {
+		g_object_unref(lookup_table);
+		lookup_table = 0;
+	}
 
-	lookup_table = table;
-	g_object_ref(table);
+	if (visible) {
+		lookup_table = table;
+		g_object_ref(table);
+	} else {
+		lookup_table_win.w = 0;
+	}
 
 	calculate_lookup_win();
 	draw_lookup_table();
@@ -67,30 +74,58 @@ static void slot_hide_auxiliary_text(IBusInputContext *ctx, gpointer data)
 static void slot_update_auxiliary_text(IBusInputContext *ctx, IBusText *text, gboolean visible, gpointer data)
 {
 	debug("update auxiliary text: %s\n", text->text);
-	if (!visible) return;
 
-	if (auxiliary_text) g_object_unref(auxiliary_text);
+	if (auxiliary_text) {
+		g_object_unref(auxiliary_text);
+		auxiliary_text = 0;
+	}
 
-	auxiliary_text = text;
-	g_object_ref(text);
+	if (visible) {
+		auxiliary_text = text;
+		g_object_ref(text);
+	} else {
+		auxiliary_text_win.w = 0;
+	}
 
 	calculate_auxiliary_win();
 	draw_auxiliary_text();
 }
 
-/*
 static void slot_show_preedit_text(IBusInputContext *ctx, gpointer data)
 {
 }
 
 static void slot_hide_preedit_text(IBusInputContext *ctx, gpointer data)
 {
+	debug("hide preedit text\n");
+	if (preedit_text) {
+		g_object_unref(preedit_text);
+		preedit_text = 0;
+	}
+
+	calculate_preedit_win();
+	draw_preedit_text();
 }
 
 static void slot_update_preedit_text(IBusInputContext *ctx, IBusText *text, guint cursor_pos, gboolean visible, gpointer data)
 {
+	debug("update preedit text: %s\n", text->text);
+
+	if (preedit_text) {
+		g_object_unref(preedit_text);
+		preedit_text = 0;
+	}
+
+	if (visible) {
+		preedit_text = text;
+		g_object_ref(text);
+	} else {
+		preedit_text_win.w = 0;
+	}
+
+	calculate_preedit_win();
+	draw_preedit_text();
 }
-*/
 
 static void slot_register_properties(IBusInputContext *ctx, IBusPropList *props, gpointer data)
 {
@@ -131,10 +166,12 @@ static void im_deactive()
 	ibus_input_context_disable(ibus_ctx);
 #endif
 
+	preedit_text_win.w = 0;
 	auxiliary_text_win.w = 0;
 	lookup_table_win.w = 0;
 	status_bar_win.w = 0;
 
+	draw_preedit_text();
 	draw_auxiliary_text();
 	draw_lookup_table();
 	draw_status_bar();
@@ -172,6 +209,7 @@ static void process_key(char *buf, unsigned len)
 
 static void im_show(unsigned winid)
 {
+	if (winid == (unsigned)-1 || winid == PreeditTextWin) draw_preedit_text();
 	if (winid == (unsigned)-1 || winid == AuxiliaryTextWin) draw_auxiliary_text();
 	if (winid == (unsigned)-1 || winid == LookupTableWin) draw_lookup_table();
 	if (winid == (unsigned)-1 || winid == StatusBarWin) draw_status_bar();
@@ -187,10 +225,12 @@ static void cursor_pos_changed(unsigned x, unsigned y)
 	cursor_y = y;
 
 	calculate_lookup_win();
+	calculate_preedit_win();
 	calculate_auxiliary_win();
 	calculate_status_win();
 
 	draw_lookup_table();
+	draw_preedit_text();
 	draw_auxiliary_text();
 	draw_status_bar();
 }
@@ -238,14 +278,14 @@ int main()
 					 "signal::update-lookup-table", slot_update_lookup_table, NULL,
 					 "signal::hide-auxiliary-text", slot_hide_auxiliary_text, NULL,
 					 "signal::update-auxiliary-text", slot_update_auxiliary_text, NULL,
-//					 "signal::show-preedit-text", slot_show_preedit_text, NULL,
-//					 "signal::hide-preedit-text", slot_hide_preedit_text, NULL,
-//					 "signal::update-preedit-text", slot_update_preedit_text, NULL,
+					 "signal::show-preedit-text", slot_show_preedit_text, NULL,
+					 "signal::hide-preedit-text", slot_hide_preedit_text, NULL,
+					 "signal::update-preedit-text", slot_update_preedit_text, NULL,
 					 "signal::register-properties", slot_register_properties, NULL,
 					 "signal::update-property", slot_update_property, NULL,
 					 NULL);
 #if IBUS_CHECK_VERSION (1, 4, 99)
-	ibus_input_context_set_capabilities(ibus_ctx, IBUS_CAP_AUXILIARY_TEXT | IBUS_CAP_LOOKUP_TABLE | IBUS_CAP_PROPERTY | IBUS_CAP_FOCUS);
+	ibus_input_context_set_capabilities(ibus_ctx, IBUS_CAP_AUXILIARY_TEXT | IBUS_CAP_LOOKUP_TABLE | IBUS_CAP_PROPERTY | IBUS_CAP_FOCUS | IBUS_CAP_PREEDIT_TEXT);
 #else
 	ibus_input_context_set_capabilities(ibus_ctx, IBUS_CAP_AUXILIARY_TEXT | IBUS_CAP_LOOKUP_TABLE | IBUS_CAP_PROPERTY);
 #endif
@@ -257,6 +297,7 @@ int main()
 	g_main_loop_run(main_loop);
 
 	if (auxiliary_text) g_object_unref(auxiliary_text);
+	if (preedit_text) g_object_unref(preedit_text);
 	if (lookup_table) g_object_unref(lookup_table);
 	if (property_list) g_object_unref(property_list);
 
