@@ -134,6 +134,10 @@ static void slot_register_properties(IBusInputContext *ctx, IBusPropList *props,
 		g_object_unref(property_list);
 		property_list = 0;
 	}
+
+	property_list = g_object_ref(props);
+	calculate_status_win();
+	draw_status_bar();
 }
 
 static void slot_update_property(IBusInputContext *ctx, IBusProperty *prop, gpointer data)

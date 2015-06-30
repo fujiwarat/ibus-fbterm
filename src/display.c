@@ -226,7 +226,7 @@ static void calculate_status_win()
 	}
 
 	status_bar_win.x = cursor_x;
-	status_bar_win.y = get_cursor_y() + 2 * WIN_INTERVAL + GAP;
+	status_bar_win.y = get_cursor_y() + 3 * WIN_INTERVAL + GAP;
 	status_bar_win.w = FW(w + property_list->properties->len) + 2 * MARGIN;
 	status_bar_win.h = WIN_HEIGHT;
 
