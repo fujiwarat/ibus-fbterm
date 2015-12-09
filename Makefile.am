@@ -1,4 +1,4 @@
-SUBDIRS = src
+#SUBDIRS = src
 
-bin_SCRIPTS = ibus-fbterm-launch
-EXTRA_DIST = ibus-fbterm-launch
+bin_SCRIPTS = ibus-fbterm
+EXTRA_DIST = ibus-fbterm
