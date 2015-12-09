@@ -181,11 +181,9 @@ fb_tty_real_ready_read (FbIo       *io,
 }
 
 FbTty *
-fb_tty_new (FbIoDispatcher *dispatcher,
-            FbShellManager *manager)
+fb_tty_new (FbShellManager *manager)
 {
     return g_object_new (FB_TYPE_TTY,
-                         "dispatcher", dispatcher,
                          "shell-manager", manager,
                          NULL);
 }

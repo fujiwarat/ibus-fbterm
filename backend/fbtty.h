@@ -80,14 +80,12 @@ GType            fb_tty_get_type                   (void);
 
 /**
  * fb_tty_new:
- * @dispatcher: #FbIoDispatcher;
  *
  * Creates  a new #FbTty.
  *
  * Returns: A newly allocated #FbTty
  */
-FbTty           *fb_tty_new                        (FbIoDispatcher *dispatcher,
-                                                    FbShellManager *manager);
+FbTty           *fb_tty_new                        (FbShellManager *manager);
 void             fb_tty_switch_vc                  (FbTty   *tty,
                                                     gboolean enter);
 

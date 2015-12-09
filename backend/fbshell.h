@@ -105,8 +105,7 @@ struct _FbShellClass {
  */
 FbShell *        fb_shell_new                   (FbShellManager *manager,
                                                  FbScreen       *screen,
-                                                 FbTermObject   *fbterm,
-                                                 FbIoDispatcher *dispatcher);
+                                                 FbTermObject   *fbterm);
 
 #if 0
 /**

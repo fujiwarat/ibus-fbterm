@@ -124,8 +124,7 @@ GType            fb_signal_io_get_type            (void);
  * Returns: A newly allocated #FbSignalIo
  */
 FbSignalIo      *fb_signal_io_new                 (sigset_t         sigmask,
-                                                   FbTermObject    *fbterm,
-                                                   FbIoDispatcher  *dispatcher);
+                                                   FbTermObject    *fbterm);
 
 G_END_DECLS
 #endif

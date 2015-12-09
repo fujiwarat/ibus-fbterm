@@ -71,9 +71,8 @@ GType            fb_shell_manager_get_type        (void);
  *
  * Returns: A newly allocated #FbShellManager
  */
-FbShellManager  *fb_shell_manager_new           (FbScreen *screen,
-                                                 FbTermObject *fbterm,
-                                                 FbIoDispatcher *dispatcher);
+FbShellManager  *fb_shell_manager_new           (FbScreen       *screen,
+                                                 FbTermObject   *fbterm);
 
 void             fb_shell_manager_create_shell  (FbShellManager *shell_manager);
 void             fb_shell_manager_delete_shell  (FbShellManager *shell_manager);

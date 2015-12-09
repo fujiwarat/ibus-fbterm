@@ -48,7 +48,6 @@ struct _FbTermObjectPrivate {
     FbSignalIo         *io;
     gboolean            is_running;
     FbShellManager     *manager;
-    FbIoDispatcher     *dispatcher;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (FbSignalIo,
@@ -193,9 +192,8 @@ fbterm_object_constructor (GType                  type,
     fbterm = FBTERM_OBJECT (object);
     priv = fbterm->priv;
 
-    priv->dispatcher = fb_io_dispatcher_new ();
-    priv->manager = fb_shell_manager_new (NULL, fbterm, priv->dispatcher);
-    priv->tty = fb_tty_new (priv->dispatcher, priv->manager);
+    priv->manager = fb_shell_manager_new (fbterm);
+    priv->tty = fb_tty_new (priv->manager);
 
     vtm.mode = VT_PROCESS;
     vtm.waitv = 0;
@@ -209,12 +207,11 @@ fbterm_object_constructor (GType                  type,
     sigaddset (&sigmask, SIGCHLD);
     sigaddset (&sigmask, SIGUSR1);
     sigaddset (&sigmask, SIGUSR2);
-    //sigaddset (&sigmask, SIGALRM);
     sigaddset (&sigmask, SIGTERM);
     sigaddset (&sigmask, SIGHUP);
 
     sigprocmask (SIG_BLOCK, &sigmask, &priv->old_sigmask);
-    priv->io = fb_signal_io_new (sigmask, fbterm, priv->dispatcher);
+    priv->io = fb_signal_io_new (sigmask, fbterm);
 
     signal (SIGPIPE, SIG_IGN);
 
@@ -234,8 +231,6 @@ fbterm_object_destroy (FbTermObject *fbterm)
     priv->io = NULL;
     ibus_object_destroy (IBUS_OBJECT (priv->tty));
     priv->tty = NULL;
-    ibus_object_destroy (IBUS_OBJECT (priv->dispatcher));
-    priv->dispatcher = NULL;
 }
 
 static gboolean
@@ -251,13 +246,11 @@ fbterm_object_is_active_term (FbTermObject *fbterm)
 }
 
 FbSignalIo *
-fb_signal_io_new (sigset_t        sigmask,
-                  FbTermObject   *fbterm,
-                  FbIoDispatcher *dispatcher)
+fb_signal_io_new (sigset_t      sigmask,
+                  FbTermObject *fbterm)
 {
     FbSignalIo *io = g_object_new (FB_TYPE_SIGNAL_IO,
                                    "fbterm", fbterm,
-                                   "dispatcher", dispatcher,
                                    NULL);
     int fd = signalfd (-1, &sigmask, 0);
     fb_io_set_fd (FB_IO (io), fd);
@@ -317,11 +310,8 @@ fbterm_object_run (FbTermObject *fbterm)
     //if (fbterm_object_is_active_term (fbterm))
         fbterm_object_process_signal (fbterm, SIGUSR2);
     fb_shell_manager_create_shell (priv->manager);
-    //write (STDIN_FILENO, "\033[H\033[J", 6);
     priv->is_running = TRUE;
-    while (priv->is_running) {
-        fb_io_dispatcher_poll (priv->dispatcher);
-    }
+    ibus_main ();
     if (fbterm_object_is_active_term (fbterm))
         fbterm_object_process_signal (fbterm, SIGUSR1);
 }
@@ -331,6 +321,7 @@ fbterm_object_exit (FbTermObject *fbterm)
 {
     g_return_if_fail (FBTERM_IS_OBJECT (fbterm));
     fbterm->priv->is_running = FALSE;
+    ibus_quit ();
 }
 
 void

@@ -39,7 +39,6 @@ struct _FbShellManagerPrivate {
     FbShell        *shell_list[NR_SHELLS];
     FbScreen       *screen;
     FbTermObject   *fbterm;
-    FbIoDispatcher *dispatcher;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (FbShellManager,
@@ -111,14 +110,12 @@ fb_shell_manager_get_index (FbShellManager *shell_manager,
 }
 
 FbShellManager *
-fb_shell_manager_new (FbScreen *screen,
-                      FbTermObject *fbterm,
-                      FbIoDispatcher *dispatcher)
+fb_shell_manager_new (FbScreen     *screen,
+                      FbTermObject *fbterm)
 {
     FbShellManager *shell_manager = g_object_new (FB_TYPE_SHELL_MANAGER, NULL);
     shell_manager->priv->screen = screen;
     shell_manager->priv->fbterm = fbterm;
-    shell_manager->priv->dispatcher = dispatcher;
     return shell_manager;
 } 
 
@@ -138,8 +135,7 @@ fb_shell_manager_create_shell (FbShellManager *shell_manager)
     index = fb_shell_manager_get_index (shell_manager, 0, TRUE, FALSE);
     priv->shell_list[index] = fb_shell_new (shell_manager,
                                             priv->screen,
-                                            priv->fbterm,
-                                            priv->dispatcher);
+                                            priv->fbterm);
     fb_shell_manager_switch_shell (shell_manager, index);
 }
 

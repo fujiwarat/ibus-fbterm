@@ -550,8 +550,7 @@ fb_shell_ready_read (FbIo        *io,
 FbShell *
 fb_shell_new (FbShellManager *manager,
               FbScreen       *screen,
-              FbTermObject   *fbterm,
-              FbIoDispatcher *dispatcher)
+              FbTermObject   *fbterm)
 {
     return g_object_new (FB_TYPE_SHELL,
                          "shell-manager", manager,
@@ -559,7 +558,6 @@ fb_shell_new (FbShellManager *manager,
                          "screen", screen,
 #endif
                          "fbterm", fbterm,
-                         "dispatcher", dispatcher,
                          NULL);
 }
 
