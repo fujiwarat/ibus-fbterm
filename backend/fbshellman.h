@@ -24,9 +24,6 @@
 #include <glib-object.h>
 #include <ibus.h>
 
-#if 0
-#include "screen.h"
-#endif
 #include "fbshell.h"
 #include "fbterm.h"
 
@@ -71,8 +68,7 @@ GType            fb_shell_manager_get_type        (void);
  *
  * Returns: A newly allocated #FbShellManager
  */
-FbShellManager  *fb_shell_manager_new           (FbScreen       *screen,
-                                                 FbTermObject   *fbterm);
+FbShellManager  *fb_shell_manager_new           (FbTermObject   *fbterm);
 
 void             fb_shell_manager_create_shell  (FbShellManager *shell_manager);
 void             fb_shell_manager_delete_shell  (FbShellManager *shell_manager);

@@ -60,7 +60,6 @@ typedef struct _FbShellPrivate FbShellPrivate;
 typedef struct _FbShellClass FbShellClass;
 
 typedef struct _FbShellManager FbShellManager;
-typedef struct _FbScreen FbScreen;
 typedef struct _FbTermObject FbTermObject;
 
 struct _CharAttr {
@@ -104,7 +103,6 @@ struct _FbShellClass {
  * Returns: A newly allocated #FbShell
  */
 FbShell *        fb_shell_new                   (FbShellManager *manager,
-                                                 FbScreen       *screen,
                                                  FbTermObject   *fbterm);
 
 #if 0

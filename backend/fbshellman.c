@@ -25,9 +25,6 @@
 #include "fbshellman.h"
 #include "fbterm.h"
 
-#define NO_SCREEN
-#define NO_VTERM
-
 #define NR_SHELLS 10
 #define SHELL_ANY ((FbShell *)-1)
 
@@ -37,7 +34,6 @@ struct _FbShellManagerPrivate {
     int             cur_shell;
     FbShell        *active_shell;
     FbShell        *shell_list[NR_SHELLS];
-    FbScreen       *screen;
     FbTermObject   *fbterm;
 };
 
@@ -110,11 +106,9 @@ fb_shell_manager_get_index (FbShellManager *shell_manager,
 }
 
 FbShellManager *
-fb_shell_manager_new (FbScreen     *screen,
-                      FbTermObject *fbterm)
+fb_shell_manager_new (FbTermObject *fbterm)
 {
     FbShellManager *shell_manager = g_object_new (FB_TYPE_SHELL_MANAGER, NULL);
-    shell_manager->priv->screen = screen;
     shell_manager->priv->fbterm = fbterm;
     return shell_manager;
 } 
@@ -134,7 +128,6 @@ fb_shell_manager_create_shell (FbShellManager *shell_manager)
     priv->shell_count++;
     index = fb_shell_manager_get_index (shell_manager, 0, TRUE, FALSE);
     priv->shell_list[index] = fb_shell_new (shell_manager,
-                                            priv->screen,
                                             priv->fbterm);
     fb_shell_manager_switch_shell (shell_manager, index);
 }
@@ -184,29 +177,11 @@ fb_shell_manager_switch_shell (FbShellManager *shell_manager,
 
     priv = shell_manager->priv;
     priv->cur_shell = num;
-    if (priv->vc_current &&
+    if (priv->vc_current) {
         fb_shell_manager_set_active (shell_manager,
-                                     priv->shell_list[num])) {
-#ifndef NO_SCREEN
-        fb_shell_manager_redraw (shell_manager, 0, 0,
-                                 priv->screen->cols, priv->screen->rows);
-#endif
+                                     priv->shell_list[num]);
     }
 }
-
-#ifndef NO_VTERM
-void
-fb_shell_manager_draw_cursor (FbShellManager *shell_manager)
-{
-    FbShellManagerPrivate *priv;
-
-    g_return_if_fail (FB_IS_SHELL_MANAGER (shell_manager));
-
-    priv = shell_manager->priv;
-    if (priv->active_shell)
-        fb_shell_update_cursor (priv->active_shell);
-}
-#endif
 
 void
 fb_shell_manager_switch_vc (FbShellManager *shell_manager,
@@ -221,14 +196,6 @@ fb_shell_manager_switch_vc (FbShellManager *shell_manager,
     fb_shell_manager_set_active (
             shell_manager,
             enter ? priv->shell_list[priv->cur_shell] : 0);
-
-    if (enter) {
-#ifndef NO_SCREEN
-        fb_shell_manager_redraw (shell_manager, 0, 0,
-                                 fb_screen_get_cols (priv->screen),
-                                 fb_screen_get_rows (priv->screen));
-#endif
-    }
 }
 
 void
@@ -278,34 +245,6 @@ fb_shell_manager_set_active (FbShellManager *shell_manager,
 
     return TRUE;
 }
-
-#ifndef NO_VTERM
-void
-fb_shell_manager_redraw (FbShellManager *shell_manager,
-                         short int       x,
-                         short int       y,
-                         short int       w,
-                         short int       h)
-{
-    FbShellManagerPrivate *priv;
-
-    g_return_if_fail (FB_IS_SHELL_MANAGER (shell_manager));
-
-    priv = shell_manager->priv;
-
-   if (priv->active_shell)
-       fb_shell_expose (priv->active_shell, x, y, w, h);
-#ifndef NO_SCREEN
-   else
-       fb_screen_fill_rect (priv->screen,
-                            font_width * x,
-                            font_height * y,
-                            font_width * w,
-                            font_height * h,
-                            0);
-#endif
-}
-#endif
 
 void
 fb_shell_manager_child_process_exited (FbShellManager *shell_manager,
