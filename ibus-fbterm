@@ -1,6 +1,6 @@
 #!/bin/bash
 
-`hash fbterm ibus-fbterm dbus-launch ibus-daemon` || exit 1
+`hash fbterm /usr/libexec/ibus-fbterm-backend dbus-launch ibus-daemon` || exit 1
 
 TTY=`tty`
 
@@ -17,9 +17,10 @@ eval `dbus-launch --sh-syntax`
 export DISPLAY=:9${TTY_NUM}.0
 
 ibus-daemon -p disable &
-IBUS_DAEMON_PID=$!
 
-fbterm -i ibus-fbterm "$@"
+fbterm "$@" &
 
-kill $IBUS_DAEMON_PID
+/usr/libexec/ibus-fbterm
+
+ibus exit
 kill $DBUS_SESSION_BUS_PID
