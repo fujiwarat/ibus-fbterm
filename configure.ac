@@ -14,6 +14,7 @@ AM_PROG_CC_C_O
 PKG_PROG_PKG_CONFIG
                                           
 # Checks for libraries.
+AM_PATH_GLIB_2_0
 PKG_CHECK_MODULES([GLIB2], [glib-2.0 >= 2.32.0])
 PKG_CHECK_MODULES([IBUS], [ibus-1.0 >= 1.5.0])
 

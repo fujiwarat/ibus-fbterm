@@ -19,11 +19,15 @@
 
 libexec_PROGRAMS = ibus-fbterm-backend
 
+marshalers_sources = \
+        marshalers.c \
+        marshalers.h \
+        $(NULL)
+
 ibus_fbterm_backend_SOURCES = \
+        $(marshalers_sources) \
         fbio.c \
         fbio.h \
-        fbkey.c \
-        fbkey.h \
         fbshell.c \
         fbshell.h \
         fbshellman.c \
@@ -34,7 +38,6 @@ ibus_fbterm_backend_SOURCES = \
         fbtty.h \
         ibusfbcontext.c \
         ibusfbcontext.h \
-        input_key.h \
         $(NULL)
 
 ibus_fbterm_backend_DEPENDENCIES = \
@@ -53,4 +56,15 @@ ibus_fbterm_backend_CFLAGS = \
         -I$(top_builddir)/src \
         $(NULL)
 
--include $(top_srcdir)/git.mk
+BUILT_SOURCES = \
+        $(marshalers_sources) \
+        $(NULL)
+
+marshalers.h: marshalers.list
+	$(AM_V_GEN) $(GLIB_GENMARSHAL) --prefix=_fb_marshal $(srcdir)/marshalers.list --header --internal > $@.tmp && \
+	mv $@.tmp $@
+
+marshalers.c: marshalers.h marshalers.list
+	$(AM_V_GEN) (echo "#include \"marshalers.h\""; \
+	$(GLIB_GENMARSHAL) --prefix=_fb_marshal $(srcdir)/marshalers.list --body --internal) > $@.tmp && \
+	mv $@.tmp $@

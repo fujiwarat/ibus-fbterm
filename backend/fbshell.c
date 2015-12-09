@@ -69,6 +69,7 @@ struct _FbShellPrivate {
     FbTermObject   *fbterm;
     struct winsize  size;
     IBusFbContext  *context;
+    gchar          *preedit_text;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (FbShell,
@@ -99,6 +100,14 @@ static void         fb_shell_change_mode          (FbShell       *shell,
 static void         fb_shell_ready_read           (FbIo          *io,
                                                    const gchar   *buff,
                                                    guint          length);
+static void         fb_context_commit_cb          (IBusFbContext *context,
+                                                   IBusText      *text,
+                                                   FbShell       *shell);
+static void         fb_context_preedit_changed_cb (IBusFbContext *context,
+                                                   IBusText      *text,
+                                                   int           *cursor_pos,
+                                                   gboolean      *visible,
+                                                   FbShell       *shell);
 
 static void
 fb_shell_init (FbShell *shell)
@@ -112,6 +121,12 @@ fb_shell_init (FbShell *shell)
     priv->first_shell = TRUE;
     priv->tty0_fd = -1;
     priv->context = ibus_fb_context_new ();
+    g_signal_connect (priv->context, "commit",
+                      (GCallback)fb_context_commit_cb,
+                      shell);
+    g_signal_connect (priv->context, "preedit-changed",
+                      (GCallback)fb_context_preedit_changed_cb,
+                      shell);
 }
 
 static void
@@ -235,6 +250,9 @@ fb_shell_destroy (FbShell *shell)
     fb_shell_manager_shell_exited (priv->manager, shell);
     fb_io_set_fd (FB_IO (shell), -1);
     wait_child_process_exit (priv->pid);
+
+    g_free (priv->preedit_text);
+    priv->preedit_text = NULL;
 }
 
 static void
@@ -365,6 +383,165 @@ fb_shell_ready_read (FbIo        *io,
     g_return_if_fail (FB_IS_SHELL (io));
 
     write (STDOUT_FILENO, buff, length);
+}
+
+static void
+fb_shell_save_cursor (FbShell *shell)
+{
+    const gchar *str = "\033\067";
+    write (STDOUT_FILENO, str, strlen (str));
+}
+
+static void
+fb_shell_restore_cursor (FbShell *shell)
+{
+    const gchar *str = "\033\070";
+    write (STDOUT_FILENO, str, strlen (str));
+}
+
+static void
+fb_shell_reset_preedit (FbShell *shell)
+{
+    FbShellPrivate *priv;
+    gunichar *ucs;
+    glong i, read, written;
+    GError *error = NULL;
+    int width = 0;
+    gchar *cleared_text = NULL;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    if (priv->preedit_text == NULL)
+        return;
+
+    ucs = g_utf8_to_ucs4 (priv->preedit_text, -1, &read, &written, &error);
+    if (ucs == NULL) {
+        g_warning ("Invalid string %s: %s", priv->preedit_text, error->message);
+        g_error_free (error);
+        g_free (priv->preedit_text);
+        priv->preedit_text = NULL;
+        return;
+    }
+    for (i = 0; i < read; i++) {
+        width += (g_unichar_iswide (ucs[i]) ? 2 : 1);
+    }
+
+    g_free (ucs);
+    g_free (priv->preedit_text);
+    priv->preedit_text = NULL;
+
+    if (!width)
+        return;
+
+    cleared_text = g_new0 (gchar, width + 1);
+    memset (cleared_text, ' ', sizeof (gchar) * width);
+    cleared_text[width] = '\0';
+
+    fb_shell_save_cursor (shell);
+
+    write (STDOUT_FILENO, cleared_text, sizeof (gchar) * width);
+
+    fb_shell_restore_cursor (shell);
+
+}
+
+static void
+fb_context_commit_cb (IBusFbContext *context,
+                      IBusText      *text,
+                      FbShell       *shell)
+{
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    fb_io_write (FB_IO (shell), text->text, strlen (text->text));
+}
+
+static void
+fb_context_preedit_changed_cb (IBusFbContext *context,
+                               IBusText      *text,
+                               int           *cursor_pos,
+                               gboolean      *visible,
+                               FbShell       *shell)
+{
+    FbShellPrivate *priv;
+    int text_length;
+    const gchar *inverse_color   = "\033[7m";
+    const gchar *underline_color = "\033[4m";
+    const gchar  *reset_color    = "\033[m";
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    fb_shell_reset_preedit (shell);
+    fb_shell_save_cursor (shell);
+
+    text_length = strlen (text->text);
+
+    if (text->attrs) {
+        int i;
+        gchar *start_pointer, *end_pointer;
+        gchar *substr;
+        gboolean has_whole_preedit = FALSE;
+        gboolean has_sub_preedit = FALSE;
+
+        for (i = 0; ; i++) {
+            IBusAttribute *attr = ibus_attr_list_get (text->attrs, i);
+            gchar *s, *e;
+
+            if (attr == NULL)
+                break;
+            if (attr->type != IBUS_ATTR_TYPE_UNDERLINE &&
+                attr->type != IBUS_ATTR_TYPE_FOREGROUND &&
+                attr->type != IBUS_ATTR_TYPE_BACKGROUND)
+                continue;
+
+            s = g_utf8_offset_to_pointer (text->text, attr->start_index);
+            e = g_utf8_offset_to_pointer (text->text, attr->end_index);
+
+            if ((e - s) == text_length) {
+                has_whole_preedit = TRUE;
+                continue;
+            } else {
+                has_sub_preedit = TRUE;
+                start_pointer = s;
+                end_pointer = e;
+                continue;
+            }
+        }
+        if (has_whole_preedit)
+            write (STDIN_FILENO, underline_color, strlen (underline_color));
+        if (has_sub_preedit) {
+            if (start_pointer > text->text) {
+                substr = g_strndup (text->text, start_pointer - text->text);
+                write (STDOUT_FILENO, substr, strlen (substr));
+                g_free (substr);
+            }
+
+            write (STDIN_FILENO, inverse_color, strlen (inverse_color));
+            substr = g_strndup (start_pointer, end_pointer - start_pointer);
+            write (STDOUT_FILENO, substr, strlen (substr));
+            g_free (substr);
+            write (STDIN_FILENO, reset_color, strlen (reset_color));
+            if (has_whole_preedit)
+                write (STDIN_FILENO, underline_color, strlen (underline_color));
+
+            if (text->text + text_length > end_pointer) {
+                substr = g_strndup (end_pointer,
+                                    text->text + text_length - end_pointer);
+                write (STDOUT_FILENO, substr, strlen (substr));
+                g_free (substr);
+            }
+        } else {
+            write (STDOUT_FILENO, text->text, text_length);
+        }
+    } else {
+        write (STDOUT_FILENO, text->text, text_length);
+    }
+
+    priv->preedit_text = g_strdup (text->text);
+    fb_shell_restore_cursor (shell);
 }
 
 FbShell *

@@ -22,19 +22,18 @@
 
 #include <linux/keyboard.h>
 
-#include "fbkey.h"
 #include "ibusfbcontext.h"
+#include "marshalers.h"
 //#include "keymap.h"
 
 enum {
-    PROP_0 = 0,
-    PROP_MANAGER
+    COMMIT,
+    PREEDIT_CHANGED,
+    LAST_SIGNAL
 };
 
 struct _IBusFbContextPrivate {
     IBusInputContext *ibuscontext;
-    FbKey            *key;
-    guint32           modifier_state;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (IBusFbContext,
@@ -51,12 +50,34 @@ static void  ibus_fb_bus_connected_cb              (IBusBus       *bus,
 
 
 static IBusBus *_bus;
+static guint context_signals[LAST_SIGNAL] = { 0 };
 
 static void
 ibus_input_context_commit_text_cb (IBusInputContext *ibuscontext,
                                    IBusText         *text,
                                    IBusFbContext    *context)
 {
+    g_return_if_fail (IBUS_IS_FB_CONTEXT (context));
+
+    g_signal_emit (context,
+                   context_signals[COMMIT], 0,
+                   text);
+}
+
+static void
+ibus_input_context_update_preedit_text_cb (IBusInputContext *ibuscontext,
+                                           IBusText         *text,
+                                           int               cursor_pos,
+                                           gboolean          visible,
+                                           IBusFbContext    *context)
+{
+    g_return_if_fail (IBUS_IS_FB_CONTEXT (context));
+
+    g_signal_emit (context,
+                   context_signals[PREEDIT_CHANGED], 0,
+                   text,
+                   cursor_pos,
+                   visible);
 }
 
 static void
@@ -66,7 +87,6 @@ ibus_fb_context_init (IBusFbContext *context)
             ibus_fb_context_get_instance_private (context);
     context->priv = priv;
 
-    priv->key = fb_key_new ();
     if (ibus_bus_is_connected (_bus))
         ibus_fb_create_input_context (context);
 
@@ -77,218 +97,141 @@ ibus_fb_context_init (IBusFbContext *context)
 static void
 ibus_fb_context_class_init (IBusFbContextClass *class)
 {
+#define I_ g_intern_static_string
+    GObjectClass *gobject_class = G_OBJECT_CLASS (class);
+
     class->filter_keypress = ibus_fb_context_real_filter_keypress;
+
+    context_signals[COMMIT] =
+            g_signal_new (I_("commit"),
+            G_TYPE_FROM_CLASS (gobject_class),
+            G_SIGNAL_RUN_LAST,
+            0,
+            NULL, NULL,
+            _fb_marshal_VOID__OBJECT,
+            G_TYPE_NONE, 1,
+            IBUS_TYPE_TEXT);
+
+    context_signals[PREEDIT_CHANGED] =
+            g_signal_new (I_("preedit-changed"),
+            G_TYPE_FROM_CLASS (gobject_class),
+            G_SIGNAL_RUN_LAST,
+            0,
+            NULL, NULL,
+            _fb_marshal_VOID__OBJECT_INT_BOOLEAN,
+            G_TYPE_NONE, 3,
+            IBUS_TYPE_TEXT,
+            G_TYPE_INT,
+            G_TYPE_BOOLEAN);
+
     /* FIXME: g_main_loop() is needed for async */
     _bus = ibus_bus_new ();
+#undef I_
 }
 
-#if 0
-static guint32
-linux_keysym_to_ibus_keyval (guint16 keysym,
-                             gchar   keycode)
+static gboolean
+fb_control_key_to_keyval (const gchar *buff,
+                          guint        length,
+                          guint32     *keyval,
+                          guint32     *modifiers)
 {
-    guint32 kval = KVAL (keysym);
-    guint32 keyval = 0;
+    g_assert (keyval != NULL && modifiers != NULL);
+    g_return_val_if_fail (buff != NULL, FALSE);
 
-    switch (KTYP (keysym)) {
-    case KT_LATIN:
-    case KT_LETTER:
-        keyval = linux_to_x[kval];
-        break;
-    case KT_FN:
-        if (kval <= 19)
-            keyval = IBUS_KEY_F1 + kval;
-        else switch (keysym) {
-        case K_FIND:
-            keyval = IBUS_KEY_Home; /* or IBUS_KEY_Find */
-            break;
-        case K_INSERT:
-            keyval = IBUS_KEY_Insert;
-            break;
-        case K_REMOVE:
-            keyval = IBUS_KEY_Delete;
-            break;
-        case K_SELECT:
-            keyval = IBUS_KEY_End; /* or IBUS_KEY_Select */
-            break;
-        case K_PGUP:
-            keyval = IBUS_KEY_Prior;
-            break;
-        case K_PGDN:
-            keyval = IBUS_KEY_Next;
-            break;
-        case K_HELP:
-            keyval = IBUS_KEY_Help;
-            break;
-        case K_DO:
-            keyval = IBUS_KEY_Execute;
-            break;
-        case K_PAUSE:
-            keyval = IBUS_KEY_Pause;
-            break;
-        case K_MACRO:
-            keyval = IBUS_KEY_Menu;
-            break;
-        default:;
-        }
-        break;
-    case KT_SPEC:
-        switch (keysym) {
-        case K_ENTER:
-            keyval = IBUS_KEY_Return;
-            break;
-        case K_BREAK:
-            keyval = IBUS_KEY_Break;
-            break;
-        case K_CAPS:
-            keyval = IBUS_KEY_Caps_Lock;
-            break;
-        case K_NUM:
-            keyval = IBUS_KEY_Num_Lock;
-            break;
-        case K_HOLD:
-            keyval = IBUS_KEY_Scroll_Lock;
-            break;
-        case K_COMPOSE:
-            keyval = IBUS_KEY_Multi_key;
-            break;
-        default:;
-        }
-        break;
-    case KT_PAD:
-        switch (keysym) {
-        case K_PPLUS:
-            keyval = IBUS_KEY_KP_Add;
-            break;
-        case K_PMINUS:
-            keyval = IBUS_KEY_KP_Subtract;
-            break;
-        case K_PSTAR:
-            keyval = IBUS_KEY_KP_Multiply;
-            break;
-        case K_PSLASH:
-            keyval = IBUS_KEY_KP_Divide;
-            break;
-        case K_PENTER:
-            keyval = IBUS_KEY_KP_Enter;
-            break;
-        case K_PCOMMA:
-            keyval = IBUS_KEY_KP_Separator;
-            break;
-        case K_PDOT:
-            keyval = IBUS_KEY_KP_Decimal;
-            break;
-        case K_PPLUSMINUS:
-            keyval = IBUS_KEY_KP_Subtract;
-            break;
-        default:
-            if (kval <= 9)
-                keyval = IBUS_KEY_KP_0 + kval;
-        }
-        break;
+    if (length == 2 && buff[0] == '\033' && buff[1] == ' ') {
+        *keyval = IBUS_KEY_space;
+        *modifiers = IBUS_SUPER_MASK;
+        return TRUE;
+    }
 
-        /*
-         * KT_DEAD keys are for accelerated diacritical creation.
-         */
-    case KT_DEAD:
-        switch (keysym) {
-        case K_DGRAVE:
-            keyval = IBUS_KEY_dead_grave;
-            break;
-        case K_DACUTE:
-            keyval = IBUS_KEY_dead_acute;
-            break;
-        case K_DCIRCM:
-            keyval = IBUS_KEY_dead_circumflex;
-            break;
-        case K_DTILDE:
-            keyval = IBUS_KEY_dead_tilde;
-            break;
-        case K_DDIERE:
-            keyval = IBUS_KEY_dead_diaeresis;
-            break;
-        default:;
+    if (length < 3)
+        return FALSE;
+    if (buff[0] != '\033' || buff[1] != '[')
+        return FALSE;
+
+    switch (buff[2]) {
+    case 'A':
+        *keyval = IBUS_KEY_Up;
+        return TRUE;
+    case 'B':
+        *keyval = IBUS_KEY_Down;
+        return TRUE;
+    case 'C':
+        *keyval = IBUS_KEY_Right;
+        return TRUE;
+    case 'D':
+        *keyval = IBUS_KEY_Left;
+        return TRUE;
+    case 'P':
+        *keyval = IBUS_KEY_Pause;
+        return TRUE;
+    case '1':
+        if (length == 4 && buff[3] == '~') {
+            *keyval = IBUS_KEY_Home;
+            return TRUE;
+        }
+    case '2':
+        if (length == 4 && buff[3] == '~') {
+            *keyval = IBUS_KEY_Insert;
+            return TRUE;
+        }
+    case '3':
+        if (length == 4 && buff[3] == '~') {
+            *keyval = IBUS_KEY_Delete;
+            return TRUE;
+        }
+    case '4':
+        if (length == 4 && buff[3] == '~') {
+            *keyval = IBUS_KEY_End;
+            return TRUE;
+        }
+    case '5':
+        if (length == 4 && buff[3] == '~') {
+            *keyval = IBUS_KEY_Page_Up;
+            return TRUE;
+        }
+    case '6':
+        if (length == 4 && buff[3] == '~') {
+            *keyval = IBUS_KEY_Page_Down;
+            return TRUE;
         }
         break;
-    case KT_CUR:
-        switch (keysym) {
-        case K_DOWN:
-            keyval = IBUS_KEY_Down;
-            break;
-        case K_LEFT:
-            keyval = IBUS_KEY_Left;
-            break;
-        case K_RIGHT:
-            keyval = IBUS_KEY_Right;
-            break;
-        case K_UP:
-            keyval = IBUS_KEY_Up;
-            break;
-        default:;
+    case '[':
+        if (length == 4 && buff[3] >= 'A') {
+            *keyval = IBUS_KEY_F1 + (buff[3] - 'A');
+            return TRUE;
         }
-        break;
-    case KT_SHIFT:
-        switch (keysym) {
-        case K_ALTGR:
-            keyval = IBUS_KEY_Alt_R;
-            break;
-        case K_ALT:
-            keyval = (keycode == 0x64 ?  IBUS_KEY_Alt_R : IBUS_KEY_Alt_L);
-            break;
-        case K_CTRL:
-            keyval = (keycode == 0x61 ?
-                      IBUS_KEY_Control_R : IBUS_KEY_Control_L);
-            break;
-        case K_CTRLL:
-            keyval = IBUS_KEY_Control_L;
-            break;
-        case K_CTRLR:
-            keyval = IBUS_KEY_Control_R;
-            break;
-        case K_SHIFT:
-            keyval = (keycode == 0x36 ?  IBUS_KEY_Shift_R : IBUS_KEY_Shift_L);
-            break;
-        case K_SHIFTL:
-            keyval = IBUS_KEY_Shift_L;
-            break;
-        case K_SHIFTR:
-            keyval = IBUS_KEY_Shift_R;
-            break;
-        default:;
-        }
-        break;
-        /*
-         * KT_ASCII keys accumulate a 3 digit decimal number that gets
-         * emitted when the shift state changes. We can't emulate that.
-         */
-    case KT_ASCII:
-        break;
-    case KT_LOCK:
-        if (keysym == K_SHIFTLOCK)
-            keyval = IBUS_KEY_Shift_Lock;
         break;
     default:;
     }
 
-    return keyval;
+    return FALSE;
 }
-#endif
 
 static void
-fb_key_to_keyval (gchar    key,
-                  guint32 *keyval,
-                  guint32 *modifiers)
+fb_char_to_keyval (gchar    ch,
+                   guint32 *keyval,
+                   guint32 *modifiers)
 {
-    switch (key) {
+    switch (ch) {
     case 0:
         *keyval = IBUS_KEY_space;
         *modifiers = IBUS_CONTROL_MASK;
         break;
+    case 0x1b:
+        *keyval = IBUS_KEY_Escape;
+        break;
+    case 0x7f:
+        *keyval = IBUS_KEY_BackSpace;
+        break;
     case '\r':
         *keyval = IBUS_KEY_Return;
         break;
+    case '\t':
+        *keyval = IBUS_KEY_Tab;
+        break;
     default:
-        *keyval = key;
+        *keyval = ch;
     }
 }
 
@@ -308,6 +251,10 @@ ibus_fb_create_input_context (IBusFbContext *context)
                       "commit-text",
                       G_CALLBACK (ibus_input_context_commit_text_cb),
                       context);
+    g_signal_connect (priv->ibuscontext,
+                      "update-preedit-text",
+                      G_CALLBACK (ibus_input_context_update_preedit_text_cb),
+                      context);
     ibus_input_context_set_capabilities (priv->ibuscontext,
                                          IBUS_CAP_AUXILIARY_TEXT |
                                          IBUS_CAP_LOOKUP_TABLE |
@@ -321,51 +268,6 @@ ibus_fb_bus_connected_cb (IBusBus *bus,
                           IBusFbContext *context)
 {
     ibus_fb_create_input_context (context);
-}
-
-static void
-ibus_fb_context_calculate_modifiers (IBusFbContext *context,
-                                     guint32        keyval,
-                                     char           down)
-{
-    IBusFbContextPrivate *priv;
-    guint32 mask = 0;
-
-    g_return_if_fail (IBUS_IS_FB_CONTEXT (context));
-
-    priv = context->priv;
-
-    switch (keyval) {
-    case IBUS_KEY_Shift_L:
-    case IBUS_KEY_Shift_R:
-        mask = IBUS_SHIFT_MASK;
-        break;
-    case IBUS_KEY_Control_L:
-    case IBUS_KEY_Control_R:
-        mask = IBUS_CONTROL_MASK;
-        break;
-    case IBUS_KEY_Alt_L:
-    case IBUS_KEY_Alt_R:
-    case IBUS_KEY_Meta_L:
-        mask = IBUS_MOD1_MASK;
-        break;
-    case IBUS_KEY_Super_L:
-    case IBUS_KEY_Hyper_L:
-        mask = IBUS_MOD4_MASK;
-        break;
-    case IBUS_KEY_ISO_Level3_Shift:
-    case IBUS_KEY_Mode_switch:
-        mask = IBUS_MOD5_MASK;
-        break;
-    default:;
-    }
-
-    if (mask) {
-        if (down)
-            priv->modifier_state |= mask;
-        else
-            priv->modifier_state &= ~mask;
-    }
 }
 
 static guint
@@ -394,26 +296,36 @@ ibus_fb_context_real_filter_keypress (IBusFbContext *context,
         gchar code = buff[i] & 0x7f;
         guint32 keyval = 0;
         guint32 modifiers = 0;
+        gboolean is_control = FALSE;
         gboolean processed;
 
-        fb_key_to_keyval (code, &keyval, &modifiers);
+        if (i == 0 &&
+            fb_control_key_to_keyval (buff, length, &keyval, &modifiers))
+            is_control = TRUE;
+        else
+            fb_char_to_keyval (code, &keyval, &modifiers);
+
         processed = ibus_input_context_process_key_event (
                 priv->ibuscontext,
                 keyval,
                 code,
                 modifiers | (down ? 0 : IBUS_RELEASE_MASK));
-        //if (!processed)
-        //        ibus_fbterm_put_im_text (ibus_fbterm, string, strlen (string));
-        if (!processed && dispatched)
-            *dispatched[j++] = buff[i];
+        if (is_control) {
+            if (!processed && dispatched) {
+                for (j = 0; j < length; j++)
+                    (*dispatched)[j] = buff[j];
+            }
+            i += length;
+        } else {
+            if (!processed && dispatched)
+                (*dispatched)[j++] = buff[i];
+        }
 
         ibus_input_context_process_key_event (
                 priv->ibuscontext,
                 keyval,
                 code,
                 modifiers | IBUS_RELEASE_MASK);
-
-        ibus_fb_context_calculate_modifiers (context, keyval, down);
     }
 
     if (j == 0 && dispatched) {
