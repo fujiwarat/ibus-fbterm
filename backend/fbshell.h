@@ -105,47 +105,6 @@ struct _FbShellClass {
 FbShell *        fb_shell_new                   (FbShellManager *manager,
                                                  FbTermObject   *fbterm);
 
-#if 0
-/**
- * fb_shell_draw_chars:
- * @shell: a #FbShell
- * @attr: renderring information of the characters.
- * @x: x
- * @y: y
- * @w: w
- * @num: num
- * @chars: chars
- * @dws: chars
- *
- * Draw characters on the rectancle area.
- */
-void             fb_shell_draw_chars            (FbShell *shell,
-                                                 CharAttr attr,
-                                                 guint16 x,
-                                                 guint16 y,
-                                                 guint16 w,
-                                                 guint16 num,
-                                                 guint16 *chars,
-                                                 gboolean *dws);
-gboolean         fb_shell_move_chars            (FbShell *shell,
-                                                 guint16 sx,
-                                                 guint16 sy,
-                                                 guint16 dx,
-                                                 guint16 dy,
-                                                 guint16 w,
-                                                 guint16 h);
-#endif
-
-#if 0
-/**
- * fb_shell_request:
- * @shell: a #FbShell
- */
-void             fb_shell_request               (FbShell     *shell,
-                                                 RequestType  type,
-                                                 guint        value);
-#endif
-
 /**
  * fb_shell_switch_vt:
  * @shell: A #FbTerm
@@ -187,32 +146,6 @@ void             fb_shell_key_input             (FbShell     *shell,
  */
 gboolean         fb_shell_child_process_exited  (FbShell *shell,
                                                  int      pid);
-
-#if 0
-/**
- * fb_shell_expose:
- *  @shell: A #FbShell
- *  @x: x
- *  @y: y
- *  @width: width
- *  @height: height
- *
- * Expose the rectangle area.
- */
-void             fb_shell_expose                (FbShell *shell,
-                                                 guint16  x,
-                                                 guint16  y,
-                                                 guint16  width,
-                                                 guint16  height);
-
-/**
- * fb_shell_update_cursor:
- *  @shell: A #FbShell
- *
- * Update the cursor renderring.
- */
-void             fb_shell_update_cursor        (FbShell     *shell);
-#endif
 
 G_END_DECLS
 #endif

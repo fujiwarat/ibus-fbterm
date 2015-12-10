@@ -36,12 +36,7 @@
 #include "fbterm.h"
 #include "ibusfbcontext.h"
 
-typedef struct {
-    int start;
-    int end;
-    gboolean selecting;
-    gboolean color_inversed;
-} TextSelection;
+#define WRITE_STR(fd, string) write ((fd), (string), strlen ((string)))
 
 typedef enum {
     CursorVisible = 1 << 0,
@@ -70,6 +65,11 @@ struct _FbShellPrivate {
     struct winsize  size;
     IBusFbContext  *context;
     gchar          *preedit_text;
+    gchar          *lookup_table_head;
+    gchar          *lookup_table_middle;
+    gchar          *lookup_table_end;
+    int             lookup_table_x;
+    int             lookup_table_y;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (FbShell,
@@ -80,34 +80,41 @@ static GObject     *fb_shell_constructor
                                (GType                  type,
                                 guint                  n_construct_properties,
                                 GObjectConstructParam *construct_params);
-static void         fb_shell_get_property         (FbShell       *shell,
-                                                   guint          prop_id,
-                                                   GValue        *value,
-                                                   GParamSpec    *pspec);
-static void         fb_shell_set_property         (FbShell       *shell,
-                                                   guint          prop_id,
-                                                   const GValue  *value,
-                                                   GParamSpec    *pspec);
-static void         fb_shell_destroy              (FbShell       *shell);
-static void         wait_child_process_exit       (int            pid);
-static void         fb_shell_create_shell_process (FbShell       *shell,
-                                                   gchar        **command);
-static void         fb_shell_adjust_char_attr     (FbShell       *shell,
-                                                   CharAttr      *attr);
-static void         fb_shell_change_mode          (FbShell       *shell,
-                                                   ModeType       type,
-                                                   guint16        val);
-static void         fb_shell_ready_read           (FbIo          *io,
-                                                   const gchar   *buff,
-                                                   guint          length);
-static void         fb_context_commit_cb          (IBusFbContext *context,
-                                                   IBusText      *text,
-                                                   FbShell       *shell);
-static void         fb_context_preedit_changed_cb (IBusFbContext *context,
-                                                   IBusText      *text,
-                                                   int           *cursor_pos,
-                                                   gboolean      *visible,
-                                                   FbShell       *shell);
+static void         fb_shell_get_property         (FbShell         *shell,
+                                                   guint            prop_id,
+                                                   GValue          *value,
+                                                   GParamSpec      *pspec);
+static void         fb_shell_set_property         (FbShell         *shell,
+                                                   guint            prop_id,
+                                                   const GValue    *value,
+                                                   GParamSpec      *pspec);
+static void         fb_shell_destroy              (FbShell         *shell);
+static void         wait_child_process_exit       (int              pid);
+static void         fb_shell_create_shell_process (FbShell         *shell,
+                                                   gchar          **command);
+static void         fb_shell_change_mode          (FbShell         *shell,
+                                                   ModeType         type,
+                                                   guint16          val);
+static void         fb_shell_ready_read           (FbIo            *io,
+                                                   const gchar     *buff,
+                                                   guint            length);
+static void         fb_context_cursor_position_cb (IBusFbContext   *context,
+                                                   int              x,
+                                                   int              y,
+                                                   FbShell         *shell);
+static void         fb_context_commit_cb          (IBusFbContext   *context,
+                                                   IBusText        *text,
+                                                   FbShell         *shell);
+static void         fb_context_preedit_changed_cb (IBusFbContext   *context,
+                                                   IBusText        *text,
+                                                   int             *cursor_pos,
+                                                   gboolean        *visible,
+                                                   FbShell         *shell);
+static void         fb_context_update_lookup_table_cb
+                                                  (IBusFbContext   *context,
+                                                   IBusLookupTable *table,
+                                                   gboolean        *visible,
+                                                   FbShell         *shell);
 
 static void
 fb_shell_init (FbShell *shell)
@@ -121,12 +128,20 @@ fb_shell_init (FbShell *shell)
     priv->first_shell = TRUE;
     priv->tty0_fd = -1;
     priv->context = ibus_fb_context_new ();
-    g_signal_connect (priv->context, "commit",
+    g_object_connect (priv->context,
+                      "signal::cursor-position",
+                      (GCallback)fb_context_cursor_position_cb,
+                      shell,
+                      "signal::commit",
                       (GCallback)fb_context_commit_cb,
-                      shell);
-    g_signal_connect (priv->context, "preedit-changed",
+                      shell,
+                      "signal::preedit-changed",
                       (GCallback)fb_context_preedit_changed_cb,
-                      shell);
+                      shell,
+                      "signal::update-lookup-table",
+                      (GCallback)fb_context_update_lookup_table_cb,
+                      shell,
+                      NULL);
 }
 
 static void
@@ -327,32 +342,6 @@ fb_shell_create_shell_process (FbShell *shell, gchar **command)
 }
 
 static void
-fb_shell_adjust_char_attr (FbShell  *shell,
-                           CharAttr *attr)
-{
-    if (attr->italic)
-        attr->fcolor = 2; // green
-    else if (attr->underline)
-        attr->fcolor = 6; // cyan
-    else if (attr->intensity == 0)
-        attr->fcolor = 8; // gray
-
-    if (attr->blink && attr->bcolor < 8)
-        attr->bcolor ^= 8;
-    if (attr->intensity == 2 && attr->fcolor < 8)
-        attr->fcolor ^= 8;
-
-    if (attr->reverse) {
-        guint16 temp = attr->bcolor;
-        attr->bcolor = attr->fcolor;
-        attr->fcolor = temp;
-
-        if (attr->bcolor > 8 && attr->bcolor < 16)
-            attr->bcolor -= 8;
-    }
-}
-
-static void
 fb_shell_change_mode (FbShell  *shell,
                       ModeType  type,
                       guint16   val)
@@ -371,7 +360,7 @@ fb_shell_change_mode (FbShell  *shell,
         str = "\033[H\033[J";
 
     if (str)
-        write (STDIN_FILENO, str, strlen (str));
+        WRITE_STR (STDIN_FILENO, str);
 }
 
 static void
@@ -379,7 +368,6 @@ fb_shell_ready_read (FbIo        *io,
                      const gchar *buff,
                      guint        length)
 {
-
     g_return_if_fail (FB_IS_SHELL (io));
 
     write (STDOUT_FILENO, buff, length);
@@ -388,15 +376,54 @@ fb_shell_ready_read (FbIo        *io,
 static void
 fb_shell_save_cursor (FbShell *shell)
 {
-    const gchar *str = "\033\067";
-    write (STDOUT_FILENO, str, strlen (str));
+    WRITE_STR (STDIN_FILENO, "\033\067");
 }
 
 static void
 fb_shell_restore_cursor (FbShell *shell)
 {
-    const gchar *str = "\033\070";
-    write (STDOUT_FILENO, str, strlen (str));
+    WRITE_STR (STDIN_FILENO, "\033\070");
+}
+
+static void
+fb_shell_get_cursor (FbShell *shell)
+{
+    WRITE_STR (STDIN_FILENO, "\033[6n");
+}
+
+static void
+fb_shell_move_cursor (FbShell *shell,
+                      int      x,
+                      int      y)
+{
+    gchar *str = g_strdup_printf ("\033[%d;%dH", x, y);
+    WRITE_STR (STDIN_FILENO, str);
+    g_free (str);
+}
+
+static void
+fbshell_draw_inverse_color (FbShell *shell)
+{
+    WRITE_STR (STDIN_FILENO, "\033[7m");
+}
+
+static void
+fbshell_draw_blue_color_bg (FbShell *shell)
+{
+    /* underline "\033[4m" is not underline actually */
+    WRITE_STR (STDIN_FILENO, "\033[44m");
+}
+
+static void
+fbshell_reset_color (FbShell *shell)
+{
+    WRITE_STR (STDIN_FILENO, "\033[m");
+}
+
+static void
+fb_shell_erase_cursor_line (FbShell *shell)
+{
+    WRITE_STR (STDIN_FILENO, "\033[K");
 }
 
 static void
@@ -441,10 +468,64 @@ fb_shell_reset_preedit (FbShell *shell)
 
     fb_shell_save_cursor (shell);
 
-    write (STDOUT_FILENO, cleared_text, sizeof (gchar) * width);
+    WRITE_STR (STDOUT_FILENO, cleared_text);
+    g_free (cleared_text);
 
     fb_shell_restore_cursor (shell);
+}
 
+static void
+fb_shell_reset_lookup_table (FbShell *shell)
+{
+    FbShellPrivate *priv;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    if (priv->lookup_table_head == NULL)
+        return;
+
+    g_free (priv->lookup_table_head);
+    g_free (priv->lookup_table_middle);
+    g_free (priv->lookup_table_end);
+    priv->lookup_table_head = NULL;
+    priv->lookup_table_middle = NULL;
+    priv->lookup_table_end = NULL;
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, priv->lookup_table_x, priv->lookup_table_y);
+    fb_shell_erase_cursor_line (shell);
+    fb_shell_restore_cursor (shell);
+}
+
+static void
+fb_context_cursor_position_cb (IBusFbContext *context,
+                               int            x,
+                               int            y,
+                               FbShell       *shell)
+{
+    FbShellPrivate *priv;
+    int lookup_table_x = x + 1;
+    int lookup_table_y = 1;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    if (priv->lookup_table_head == NULL)
+        return;
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, lookup_table_x, lookup_table_y);
+    priv->lookup_table_x = lookup_table_x;
+    priv->lookup_table_y = lookup_table_y;
+    WRITE_STR (STDOUT_FILENO, priv->lookup_table_head);
+    fbshell_draw_inverse_color (shell);
+    WRITE_STR (STDOUT_FILENO, priv->lookup_table_middle);
+    fbshell_reset_color (shell);
+    WRITE_STR (STDOUT_FILENO, priv->lookup_table_end);
+    fb_shell_restore_cursor (shell);
 }
 
 static void
@@ -466,9 +547,6 @@ fb_context_preedit_changed_cb (IBusFbContext *context,
 {
     FbShellPrivate *priv;
     int text_length;
-    const gchar *inverse_color   = "\033[7m";
-    const gchar *underline_color = "\033[4m";
-    const gchar  *reset_color    = "\033[m";
 
     g_return_if_fail (FB_IS_SHELL (shell));
 
@@ -511,26 +589,26 @@ fb_context_preedit_changed_cb (IBusFbContext *context,
             }
         }
         if (has_whole_preedit)
-            write (STDIN_FILENO, underline_color, strlen (underline_color));
+            fbshell_draw_inverse_color (shell);
         if (has_sub_preedit) {
             if (start_pointer > text->text) {
                 substr = g_strndup (text->text, start_pointer - text->text);
-                write (STDOUT_FILENO, substr, strlen (substr));
+                WRITE_STR (STDOUT_FILENO, substr);
                 g_free (substr);
             }
 
-            write (STDIN_FILENO, inverse_color, strlen (inverse_color));
+            fbshell_draw_blue_color_bg (shell);
             substr = g_strndup (start_pointer, end_pointer - start_pointer);
-            write (STDOUT_FILENO, substr, strlen (substr));
+            WRITE_STR (STDOUT_FILENO, substr);
             g_free (substr);
-            write (STDIN_FILENO, reset_color, strlen (reset_color));
+            fbshell_reset_color (shell);
             if (has_whole_preedit)
-                write (STDIN_FILENO, underline_color, strlen (underline_color));
+                fbshell_draw_inverse_color (shell);
 
             if (text->text + text_length > end_pointer) {
                 substr = g_strndup (end_pointer,
                                     text->text + text_length - end_pointer);
-                write (STDOUT_FILENO, substr, strlen (substr));
+                WRITE_STR (STDOUT_FILENO, substr);
                 g_free (substr);
             }
         } else {
@@ -544,6 +622,86 @@ fb_context_preedit_changed_cb (IBusFbContext *context,
     fb_shell_restore_cursor (shell);
 }
 
+static void
+fb_context_update_lookup_table_cb (IBusFbContext   *context,
+                                   IBusLookupTable *table,
+                                   gboolean        *visible,
+                                   FbShell         *shell)
+{
+    FbShellPrivate *priv;
+    guint page_size;
+    guint ncandidates;
+    guint cursor;
+    guint cursor_in_page = 0;
+    guint page_start_pos;
+    guint page_end_pos;
+    guint i;
+    gboolean show_cursor = TRUE;
+    GString *candidate_list_head;
+    GString *candidate_list_middle;
+    GString *candidate_list_end;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    if (!visible) {
+        fb_shell_reset_lookup_table (shell);
+        return;
+    }
+
+    priv = shell->priv;
+
+    page_size = ibus_lookup_table_get_page_size (table);
+    ncandidates = ibus_lookup_table_get_number_of_candidates (table);
+    cursor = ibus_lookup_table_get_cursor_pos (table);
+    cursor_in_page = ibus_lookup_table_get_cursor_in_page (table);
+    page_start_pos = cursor / page_size * page_size;
+    page_end_pos = MIN (page_start_pos + page_size, ncandidates);
+    show_cursor = ibus_lookup_table_is_cursor_visible (table);
+    candidate_list_head = g_string_new (NULL);
+    candidate_list_middle = g_string_new (NULL);
+    candidate_list_end = g_string_new (NULL);
+
+    for (i = page_start_pos; i < page_end_pos; i++) {
+        IBusText *candidate = ibus_lookup_table_get_candidate (table, i);
+        guint index = i - page_start_pos;
+        IBusText *label = ibus_lookup_table_get_label (table, index);
+        gchar *label_str;
+        gchar *candidate_cell;
+
+        if (label)
+            label_str = g_strdup (label->text);
+        else
+            label_str = g_strdup_printf ("%d", index);
+
+        if (index == 0) {
+            candidate_cell = g_strdup_printf ("%s. %s",
+                                              label_str, candidate->text);
+        } else {
+            candidate_cell = g_strdup_printf (" %s. %s",
+                                              label_str, candidate->text);
+        }
+
+        if (show_cursor) {
+            if (index < cursor_in_page)
+                g_string_append (candidate_list_head, candidate_cell);
+            else if (index == cursor_in_page)
+                g_string_append (candidate_list_middle, candidate_cell);
+            else
+                g_string_append (candidate_list_end, candidate_cell);
+        } else {
+            g_string_append (candidate_list_head, candidate_cell);
+        }
+        g_free (candidate_cell);
+        g_free (label_str);
+    }
+
+    fb_shell_reset_lookup_table (shell);
+    priv->lookup_table_head = g_string_free (candidate_list_head, FALSE);
+    priv->lookup_table_middle = g_string_free (candidate_list_middle, FALSE);
+    priv->lookup_table_end = g_string_free (candidate_list_end, FALSE);
+    fb_shell_get_cursor (shell);
+}
+
 FbShell *
 fb_shell_new (FbShellManager *manager,
               FbTermObject   *fbterm)
@@ -552,47 +710,6 @@ fb_shell_new (FbShellManager *manager,
                          "shell-manager", manager,
                          "fbterm", fbterm,
                          NULL);
-}
-
-void
-fb_shell_draw_chars (FbShell *shell,
-                     CharAttr attr,
-                     unsigned short x,
-                     unsigned short y,
-                     unsigned short w,
-                     unsigned short num,
-                     unsigned short *chars,
-                     gboolean *dws)
-{
-    FbShellPrivate *priv;
-
-    g_return_if_fail (FB_IS_SHELL (shell));
-
-    priv = shell->priv;
-    if (fb_shell_manager_active_shell (priv->manager) != shell)
-        return;
-
-    fb_shell_adjust_char_attr (shell, &attr);
-}
-
-gboolean
-fb_shell_move_chars (FbShell *shell,
-                     guint16 sx,
-                     guint16 sy,
-                     guint16 dx,
-                     guint16 dy,
-                     guint16 w,
-                     guint16 h)
-{
-    FbShellPrivate *priv;
-
-    g_return_if_fail (FB_IS_SHELL (shell));
-
-    priv = shell->priv;
-    if (fb_shell_manager_active_shell (priv->manager) != shell)
-        return TRUE;
-
-    return FALSE;
 }
 
 void

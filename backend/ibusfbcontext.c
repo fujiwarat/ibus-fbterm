@@ -21,14 +21,16 @@
 #include <ibus.h>
 
 #include <linux/keyboard.h>
+#include <string.h>
 
 #include "ibusfbcontext.h"
 #include "marshalers.h"
-//#include "keymap.h"
 
 enum {
     COMMIT,
     PREEDIT_CHANGED,
+    UPDATE_LOOKUP_TABLE,
+    CURSOR_POSITION,
     LAST_SIGNAL
 };
 
@@ -81,6 +83,20 @@ ibus_input_context_update_preedit_text_cb (IBusInputContext *ibuscontext,
 }
 
 static void
+ibus_input_context_update_lookup_table_cb (IBusInputContext *ibuscontext,
+                                           IBusLookupTable  *table,
+                                           gboolean          visible,
+                                           IBusFbContext    *context)
+{
+    g_return_if_fail (IBUS_IS_FB_CONTEXT (context));
+
+    g_signal_emit (context,
+                   context_signals[UPDATE_LOOKUP_TABLE], 0,
+                   table,
+                   visible);
+}
+
+static void
 ibus_fb_context_init (IBusFbContext *context)
 {
     IBusFbContextPrivate *priv =
@@ -124,17 +140,43 @@ ibus_fb_context_class_init (IBusFbContextClass *class)
             G_TYPE_INT,
             G_TYPE_BOOLEAN);
 
+    context_signals[UPDATE_LOOKUP_TABLE] =
+            g_signal_new (I_("update-lookup-table"),
+            G_TYPE_FROM_CLASS (gobject_class),
+            G_SIGNAL_RUN_LAST,
+            0,
+            NULL, NULL,
+            _fb_marshal_VOID__OBJECT_BOOLEAN,
+            G_TYPE_NONE, 2,
+            IBUS_TYPE_LOOKUP_TABLE,
+            G_TYPE_BOOLEAN);
+
+    context_signals[CURSOR_POSITION] =
+            g_signal_new (I_("cursor-position"),
+            G_TYPE_FROM_CLASS (gobject_class),
+            G_SIGNAL_RUN_LAST,
+            0,
+            NULL, NULL,
+            _fb_marshal_VOID__INT_INT,
+            G_TYPE_NONE, 2,
+            G_TYPE_INT,
+            G_TYPE_INT);
+
     /* FIXME: g_main_loop() is needed for async */
     _bus = ibus_bus_new ();
 #undef I_
 }
 
 static gboolean
-fb_control_key_to_keyval (const gchar *buff,
-                          guint        length,
-                          guint32     *keyval,
-                          guint32     *modifiers)
+fb_control_key_to_keyval (IBusFbContext *context,
+                          const gchar   *buff,
+                          guint          length,
+                          guint32       *keyval,
+                          guint32       *modifiers)
 {
+    guint i;
+    const gchar *delim;
+
     g_assert (keyval != NULL && modifiers != NULL);
     g_return_val_if_fail (buff != NULL, FALSE);
 
@@ -149,6 +191,22 @@ fb_control_key_to_keyval (const gchar *buff,
     if (buff[0] != '\033' || buff[1] != '[')
         return FALSE;
 
+    for (i = 0; i < length; i++) {
+        delim = buff + i;
+        if (*delim == ';')
+            break;
+    }
+    if (i < length) {
+        gchar *end = NULL;
+        /* format is '\033[x;yR]' */
+        guint64 x = g_ascii_strtoull (buff + 2, NULL, 10);
+        guint64 y = g_ascii_strtoull (delim + 1, &end, 10);
+        if (*end == 'R') {
+            g_return_val_if_fail (IBUS_IS_FB_CONTEXT (context), TRUE);
+            g_signal_emit (context, context_signals[CURSOR_POSITION], 0, x, y);
+            return TRUE;
+        }
+    }
     switch (buff[2]) {
     case 'A':
         *keyval = IBUS_KEY_Up;
@@ -247,14 +305,17 @@ ibus_fb_create_input_context (IBusFbContext *context)
     /* FIXME: g_main_loop() is needed for async. */
     priv->ibuscontext = ibus_bus_create_input_context (_bus, "fbterm");
 
-    g_signal_connect (priv->ibuscontext,
-                      "commit-text",
+    g_object_connect (priv->ibuscontext,
+                      "signal::commit-text",
                       G_CALLBACK (ibus_input_context_commit_text_cb),
-                      context);
-    g_signal_connect (priv->ibuscontext,
-                      "update-preedit-text",
+                      context,
+                      "signal::update-preedit-text",
                       G_CALLBACK (ibus_input_context_update_preedit_text_cb),
-                      context);
+                      context,
+                      "signal::update-lookup-table",
+                      G_CALLBACK (ibus_input_context_update_lookup_table_cb),
+                      context,
+                      NULL);
     ibus_input_context_set_capabilities (priv->ibuscontext,
                                          IBUS_CAP_AUXILIARY_TEXT |
                                          IBUS_CAP_LOOKUP_TABLE |
@@ -300,16 +361,26 @@ ibus_fb_context_real_filter_keypress (IBusFbContext *context,
         gboolean processed;
 
         if (i == 0 &&
-            fb_control_key_to_keyval (buff, length, &keyval, &modifiers))
+            fb_control_key_to_keyval (context, buff, length,
+                                      &keyval, &modifiers))
             is_control = TRUE;
         else
             fb_char_to_keyval (code, &keyval, &modifiers);
+
+        if (is_control && keyval == 0 && modifiers == 0) {
+            if (dispatched) {
+                g_free (*dispatched);
+                *dispatched = NULL;
+            }
+            return 0;
+        }
 
         processed = ibus_input_context_process_key_event (
                 priv->ibuscontext,
                 keyval,
                 code,
                 modifiers | (down ? 0 : IBUS_RELEASE_MASK));
+
         if (is_control) {
             if (!processed && dispatched) {
                 for (j = 0; j < length; j++)
