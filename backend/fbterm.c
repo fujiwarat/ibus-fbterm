@@ -58,6 +58,7 @@ G_DEFINE_TYPE_WITH_PRIVATE (FbTermObject,
 //                            G_TYPE_INITIALLY_UNOWNED);
                             IBUS_TYPE_OBJECT);
 
+static void            fb_signal_io_destroy         (FbSignalIo *io);
 static void            fb_signal_io_ready_read      (FbIo        *fbio,
                                                      const gchar *buff,
                                                      guint        length);
@@ -89,6 +90,8 @@ fb_signal_io_class_init (FbSignalIoClass *class)
     GObjectClass *gobject_class = G_OBJECT_CLASS (class);
     FB_IO_CLASS (class)->ready_read = fb_signal_io_ready_read;
 
+    IBUS_OBJECT_CLASS (class)->destroy =
+            (IBusObjectDestroyFunc)fb_signal_io_destroy;
     gobject_class->get_property =
             (GObjectGetPropertyFunc)fb_signal_io_get_property;
     gobject_class->set_property =
@@ -106,6 +109,18 @@ fb_signal_io_class_init (FbSignalIoClass *class)
                                  "The object of FbTerm",
                                  FBTERM_TYPE_OBJECT,
                                  G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+}
+
+static void
+fb_signal_io_destroy (FbSignalIo *io)
+{
+    FbSignalIoPrivate *priv;
+    g_return_if_fail (FB_IS_SIGNAL_IO (io));
+
+    priv = io->priv;
+
+    g_object_unref (priv->fbterm);
+    priv->fbterm = NULL;
 }
 
 static void

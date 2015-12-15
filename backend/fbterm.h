@@ -33,7 +33,7 @@
 #define FB_TYPE_SIGNAL_IO                       (fb_signal_io_get_type ())
 #define FB_SIGNAL_IO(o)                         (G_TYPE_CHECK_INSTANCE_CAST ((o), FB_TYPE_SIGNAL_IO, FbSignalIo))
 #define FB_SIGNAL_IO_CLASS(k)                   (G_TYPE_CHECK_CLASS_CAST ((k), FB_TYPE_SIGNAL_IO, FbSignalIoClass))
-#define FB_IS_SIGNLA_IO(o)                      (G_TYPE_CHECK_INSTANCE_TYPE ((o), FB_TYPE_SIGNAL))
+#define FB_IS_SIGNAL_IO(o)                      (G_TYPE_CHECK_INSTANCE_TYPE ((o), FB_TYPE_SIGNAL_IO))
 #define FB_IS_SIGNAL_IO_CLASS(k)                (G_TYPE_CHECK_CLASS_TYPE ((k), FB_TYPE_SIGNAL_IO))
 
 #define FBTERM_TYPE_OBJECT                      (fbterm_object_get_type ())

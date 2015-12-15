@@ -245,7 +245,7 @@ fb_shell_set_property (FbShell      *shell,
     case PROP_FBTERM: {
         FbTermObject *fbterm = g_value_get_object (value);
         g_return_if_fail (FBTERM_IS_OBJECT (fbterm));
-        priv->fbterm= g_object_ref_sink (fbterm);
+        priv->fbterm = g_object_ref_sink (fbterm);
         break;
     }
     default:
@@ -268,6 +268,11 @@ fb_shell_destroy (FbShell *shell)
 
     g_free (priv->preedit_text);
     priv->preedit_text = NULL;
+
+    g_object_unref (priv->manager);
+    priv->manager = NULL;
+    g_object_unref (priv->fbterm);
+    priv->fbterm = NULL;
 }
 
 static void

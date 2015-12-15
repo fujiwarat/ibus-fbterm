@@ -159,6 +159,9 @@ fb_tty_destroy (FbTty *tty)
 
     ioctl (STDIN_FILENO, KDSKBMODE, priv->kb_mode);
     tcsetattr (STDIN_FILENO, TCSAFLUSH, &priv->old_tm);
+
+    g_object_unref (priv->manager);
+    priv->manager = NULL;
 }
 
 static void
