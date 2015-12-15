@@ -254,28 +254,6 @@ fb_shell_set_property (FbShell      *shell,
 }
 
 static void
-fb_shell_destroy (FbShell *shell)
-{
-    FbShellPrivate *priv;
-
-    g_return_if_fail (FB_IS_SHELL (shell));
-
-    priv = shell->priv;
-
-    fb_shell_manager_shell_exited (priv->manager, shell);
-    fb_io_set_fd (FB_IO (shell), -1);
-    wait_child_process_exit (priv->pid);
-
-    g_free (priv->preedit_text);
-    priv->preedit_text = NULL;
-
-    g_object_unref (priv->manager);
-    priv->manager = NULL;
-    g_object_unref (priv->fbterm);
-    priv->fbterm = NULL;
-}
-
-static void
 wait_child_process_exit (int pid)
 {
     int retval;
@@ -429,6 +407,40 @@ static void
 fb_shell_erase_cursor_line (FbShell *shell)
 {
     WRITE_STR (STDIN_FILENO, "\033[K");
+}
+
+static void
+fb_shell_set_scrolling_region (FbShell *shell,
+                               int      top,
+                               int      bottom)
+{
+    char *str = g_strdup_printf("\033[%d;%dr", top, bottom);
+    WRITE_STR (STDIN_FILENO, str);
+    g_free (str);
+}
+
+static void
+fb_shell_destroy (FbShell *shell)
+{
+    FbShellPrivate *priv;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    fb_shell_manager_shell_exited (priv->manager, shell);
+    fb_io_set_fd (FB_IO (shell), -1);
+    wait_child_process_exit (priv->pid);
+
+    g_free (priv->preedit_text);
+    priv->preedit_text = NULL;
+
+    g_object_unref (priv->manager);
+    priv->manager = NULL;
+    g_object_unref (priv->fbterm);
+    priv->fbterm = NULL;
+
+    fb_shell_set_scrolling_region (shell, 0, priv->size.ws_row);
 }
 
 static void
@@ -755,10 +767,12 @@ fb_shell_switch_vt (FbShell *shell, gboolean enter, FbShell *peer)
     priv = shell->priv;
 
     if (priv->tty0_fd == -1)
-        priv->tty0_fd = open ("/dev/tty0", O_RDWR);
+        priv->tty0_fd = open ("/dev/tty", O_RDWR);
     if (priv->tty0_fd != -1) {
         seteuid (0);
+        /* Need tty instead of tty0 to get the right size. */
         ioctl (priv->tty0_fd, TIOCGWINSZ, &priv->size);
+        fb_shell_set_scrolling_region (shell, 0, priv->size.ws_row - 1);
         ioctl (priv->tty0_fd, TIOCCONS, 0);
         if (enter) {
             int slavefd = open (ptsname (fb_io_get_fd (FB_IO (shell))), O_RDWR);
