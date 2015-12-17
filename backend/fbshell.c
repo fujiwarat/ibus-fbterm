@@ -31,10 +31,13 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 
+#include "fbcontext.h"
 #include "fbshell.h"
 #include "fbshellman.h"
 #include "fbterm.h"
-#include "ibusfbcontext.h"
+
+
+extern FbContext* ibus_fb_context_new (void);
 
 #define WRITE_STR(fd, string) write ((fd), (string), strlen ((string)))
 
@@ -63,7 +66,7 @@ struct _FbShellPrivate {
     int             tty0_fd;
     FbTermObject   *fbterm;
     struct winsize  size;
-    IBusFbContext  *context;
+    FbContext      *context;
     gchar          *preedit_text;
     gchar          *lookup_table_head;
     gchar          *lookup_table_middle;
@@ -98,20 +101,20 @@ static void         fb_shell_change_mode          (FbShell         *shell,
 static void         fb_shell_ready_read           (FbIo            *io,
                                                    const gchar     *buff,
                                                    guint            length);
-static void         fb_context_cursor_position_cb (IBusFbContext   *context,
+static void         fb_context_cursor_position_cb (FbContext       *context,
                                                    int              x,
                                                    int              y,
                                                    FbShell         *shell);
-static void         fb_context_commit_cb          (IBusFbContext   *context,
+static void         fb_context_commit_cb          (FbContext       *context,
                                                    IBusText        *text,
                                                    FbShell         *shell);
-static void         fb_context_preedit_changed_cb (IBusFbContext   *context,
+static void         fb_context_preedit_changed_cb (FbContext       *context,
                                                    IBusText        *text,
                                                    int             *cursor_pos,
                                                    gboolean        *visible,
                                                    FbShell         *shell);
 static void         fb_context_update_lookup_table_cb
-                                                  (IBusFbContext   *context,
+                                                  (FbContext       *context,
                                                    IBusLookupTable *table,
                                                    gboolean        *visible,
                                                    FbShell         *shell);
@@ -127,7 +130,7 @@ fb_shell_init (FbShell *shell)
     priv->pid = -1;
     priv->first_shell = TRUE;
     priv->tty0_fd = -1;
-    priv->context = ibus_fb_context_new ();
+    priv->context = (FbContext *)ibus_fb_context_new ();
     g_object_connect (priv->context,
                       "signal::cursor-position",
                       (GCallback)fb_context_cursor_position_cb,
@@ -517,10 +520,10 @@ fb_shell_reset_lookup_table (FbShell *shell)
 }
 
 static void
-fb_context_cursor_position_cb (IBusFbContext *context,
-                               int            x,
-                               int            y,
-                               FbShell       *shell)
+fb_context_cursor_position_cb (FbContext *context,
+                               int        x,
+                               int        y,
+                               FbShell   *shell)
 {
     FbShellPrivate *priv;
     int lookup_table_x = x + 1;
@@ -546,9 +549,9 @@ fb_context_cursor_position_cb (IBusFbContext *context,
 }
 
 static void
-fb_context_commit_cb (IBusFbContext *context,
-                      IBusText      *text,
-                      FbShell       *shell)
+fb_context_commit_cb (FbContext *context,
+                      IBusText  *text,
+                      FbShell   *shell)
 {
     g_return_if_fail (FB_IS_SHELL (shell));
 
@@ -556,11 +559,11 @@ fb_context_commit_cb (IBusFbContext *context,
 }
 
 static void
-fb_context_preedit_changed_cb (IBusFbContext *context,
-                               IBusText      *text,
-                               int           *cursor_pos,
-                               gboolean      *visible,
-                               FbShell       *shell)
+fb_context_preedit_changed_cb (FbContext *context,
+                               IBusText  *text,
+                               int       *cursor_pos,
+                               gboolean  *visible,
+                               FbShell   *shell)
 {
     FbShellPrivate *priv;
     int text_length;
@@ -640,7 +643,7 @@ fb_context_preedit_changed_cb (IBusFbContext *context,
 }
 
 static void
-fb_context_update_lookup_table_cb (IBusFbContext   *context,
+fb_context_update_lookup_table_cb (FbContext       *context,
                                    IBusLookupTable *table,
                                    gboolean        *visible,
                                    FbShell         *shell)
@@ -821,8 +824,8 @@ fb_shell_key_input (FbShell     *shell,
 
     priv = shell->priv;
 
-    retval = IBUS_FB_CONTEXT_GET_CLASS (priv->context)->filter_keypress (
-            priv->context, buff, length, &dispatched);
+    retval = FB_CONTEXT_GET_INTERFACE (priv->context)->filter_keypress(
+            FB_CONTEXT (priv->context), buff, length, &dispatched);
     if (!retval)
         return;
 

@@ -19,52 +19,41 @@
 
 libexec_PROGRAMS = ibus-fbterm-backend
 
-marshalers_sources = \
-        marshalers.c \
-        marshalers.h \
-        $(NULL)
+AM_VALAFLAGS = \
+    --vapidir=$(top_builddir)/bindings/vala \
+    --vapidir=$(top_srcdir)/bindings/vala \
+    --pkg=ibus-1.0 \
+    --pkg=posix \
+    $(NULL)
 
 ibus_fbterm_backend_SOURCES = \
-        $(marshalers_sources) \
-        fbio.c \
-        fbio.h \
-        fbshell.c \
-        fbshell.h \
-        fbshellman.c \
-        fbshellman.h \
-        fbterm.c \
-        fbterm.h \
-        fbtty.c \
-        fbtty.h \
-        ibusfbcontext.c \
-        ibusfbcontext.h \
-        $(NULL)
+    fbio.c \
+    fbio.h \
+    fbcontext.h \
+    fbshell.c \
+    fbshell.h \
+    fbshellman.c \
+    fbshellman.h \
+    fbterm.c \
+    fbterm.h \
+    fbtty.c \
+    fbtty.h \
+    ibusfbcontext.vala \
+    $(NULL)
 
 ibus_fbterm_backend_DEPENDENCIES = \
-        $(NULL)
+    $(NULL)
 
 ibus_fbterm_backend_LDADD = \
-        @GLIB2_LIBS@ \
-        @IBUS_LIBS@ \
-        -lutil \
-        $(NULL)
+    @GLIB2_LIBS@ \
+    @IBUS_LIBS@ \
+    -lutil \
+    $(NULL)
 
 ibus_fbterm_backend_CFLAGS = \
-        @GLIB2_CFLAGS@ \
-        @IBUS_CFLAGS@ \
-        -I$(top_srcdir)/src \
-        -I$(top_builddir)/src \
-        $(NULL)
+    @GLIB2_CFLAGS@ \
+    @IBUS_CFLAGS@ \
+    -I$(top_srcdir)/src \
+    -I$(top_builddir)/src \
+    $(NULL)
 
-BUILT_SOURCES = \
-        $(marshalers_sources) \
-        $(NULL)
-
-marshalers.h: marshalers.list
-	$(AM_V_GEN) $(GLIB_GENMARSHAL) --prefix=_fb_marshal $(srcdir)/marshalers.list --header --internal > $@.tmp && \
-	mv $@.tmp $@
-
-marshalers.c: marshalers.h marshalers.list
-	$(AM_V_GEN) (echo "#include \"marshalers.h\""; \
-	$(GLIB_GENMARSHAL) --prefix=_fb_marshal $(srcdir)/marshalers.list --body --internal) > $@.tmp && \
-	mv $@.tmp $@
