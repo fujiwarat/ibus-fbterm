@@ -46,10 +46,13 @@ typedef struct _FbContextIface FbContextIface;
  */
 struct _FbContextIface {
     GTypeInterface parent_iface;
-    guint (*filter_keypress) (FbContext* self,
-                              const gchar* buff,
-                              guint length,
-                              gchar** dispatched);
+
+    guint      (*filter_keypress)                  (FbContext    *context,
+                                                    const gchar  *buff,
+                                                    guint         length,
+                                                    gchar       **dispatched);
+    void       (*load_settings)                    (FbContext    *context);
+
     gpointer dummy[5];
 };
 

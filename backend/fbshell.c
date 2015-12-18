@@ -105,6 +105,9 @@ static void         fb_context_cursor_position_cb (FbContext       *context,
                                                    int              x,
                                                    int              y,
                                                    FbShell         *shell);
+static void         fb_context_warning_cb         (FbContext       *context,
+                                                   const gchar     *message,
+                                                   FbShell         *shell);
 static void         fb_context_commit_cb          (FbContext       *context,
                                                    IBusText        *text,
                                                    FbShell         *shell);
@@ -132,6 +135,9 @@ fb_shell_init (FbShell *shell)
     priv->tty0_fd = -1;
     priv->context = (FbContext *)ibus_fb_context_new ();
     g_object_connect (priv->context,
+                      "signal::user-warning",
+                      (GCallback)fb_context_warning_cb,
+                      shell,
                       "signal::cursor-position",
                       (GCallback)fb_context_cursor_position_cb,
                       shell,
@@ -388,20 +394,26 @@ fb_shell_move_cursor (FbShell *shell,
 }
 
 static void
-fbshell_draw_inverse_color (FbShell *shell)
+fb_shell_draw_inverse_color (FbShell *shell)
 {
     WRITE_STR (STDIN_FILENO, "\033[7m");
 }
 
 static void
-fbshell_draw_blue_color_bg (FbShell *shell)
+fb_shell_draw_blue_color_bg (FbShell *shell)
 {
     /* underline "\033[4m" is not underline actually */
     WRITE_STR (STDIN_FILENO, "\033[44m");
 }
 
 static void
-fbshell_reset_color (FbShell *shell)
+fb_shell_blink_color (FbShell *shell)
+{
+    WRITE_STR (STDIN_FILENO, "\033[5m");
+}
+
+static void
+fb_shell_reset_color (FbShell *shell)
 {
     WRITE_STR (STDIN_FILENO, "\033[m");
 }
@@ -520,6 +532,25 @@ fb_shell_reset_lookup_table (FbShell *shell)
 }
 
 static void
+fb_context_warning_cb (FbContext   *context,
+                       const gchar *message,
+                       FbShell     *shell)
+{
+    FbShellPrivate *priv;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, priv->size.ws_row, 0);
+    fb_shell_blink_color (shell);
+    WRITE_STR (STDOUT_FILENO, message);
+    fb_shell_reset_color (shell);
+    fb_shell_restore_cursor (shell);
+}
+
+static void
 fb_context_cursor_position_cb (FbContext *context,
                                int        x,
                                int        y,
@@ -541,9 +572,9 @@ fb_context_cursor_position_cb (FbContext *context,
     priv->lookup_table_x = lookup_table_x;
     priv->lookup_table_y = lookup_table_y;
     WRITE_STR (STDOUT_FILENO, priv->lookup_table_head);
-    fbshell_draw_inverse_color (shell);
+    fb_shell_draw_inverse_color (shell);
     WRITE_STR (STDOUT_FILENO, priv->lookup_table_middle);
-    fbshell_reset_color (shell);
+    fb_shell_reset_color (shell);
     WRITE_STR (STDOUT_FILENO, priv->lookup_table_end);
     fb_shell_restore_cursor (shell);
 }
@@ -609,7 +640,7 @@ fb_context_preedit_changed_cb (FbContext *context,
             }
         }
         if (has_whole_preedit)
-            fbshell_draw_inverse_color (shell);
+            fb_shell_draw_inverse_color (shell);
         if (has_sub_preedit) {
             if (start_pointer > text->text) {
                 substr = g_strndup (text->text, start_pointer - text->text);
@@ -617,13 +648,13 @@ fb_context_preedit_changed_cb (FbContext *context,
                 g_free (substr);
             }
 
-            fbshell_draw_blue_color_bg (shell);
+            fb_shell_draw_blue_color_bg (shell);
             substr = g_strndup (start_pointer, end_pointer - start_pointer);
             WRITE_STR (STDOUT_FILENO, substr);
             g_free (substr);
-            fbshell_reset_color (shell);
+            fb_shell_reset_color (shell);
             if (has_whole_preedit)
-                fbshell_draw_inverse_color (shell);
+                fb_shell_draw_inverse_color (shell);
 
             if (text->text + text_length > end_pointer) {
                 substr = g_strndup (end_pointer,
@@ -787,6 +818,10 @@ fb_shell_switch_vt (FbShell *shell, gboolean enter, FbShell *peer)
 
     if (enter) {
         fb_shell_mode_changed (shell, AllModes);
+        if (priv->context != NULL) {
+            FB_CONTEXT_GET_INTERFACE (priv->context)->load_settings(
+                    FB_CONTEXT (priv->context));
+        }
     } else if (!peer) {
         fb_shell_change_mode (shell, CursorKeyEscO, FALSE);
         fb_shell_change_mode (shell, ApplicKeypad, FALSE);

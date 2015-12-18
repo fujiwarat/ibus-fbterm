@@ -177,6 +177,8 @@ fbterm_object_init (FbTermObject *fbterm)
             fbterm_object_get_instance_private (fbterm);
 
     fbterm->priv = priv;
+
+    ibus_init ();
 }
 
 static void
