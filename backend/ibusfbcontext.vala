@@ -30,6 +30,9 @@ public interface FbContext {
     public signal void user_warning        (string           message);
     public signal void cursor_position     (int              x,
                                             int              y);
+    public signal int  switcher_switch     (IBus.EngineDesc[]
+                                                             engines,
+                                            uint32           keyval);
     public signal void commit              (IBus.Text        text);
     public signal void preedit_changed     (IBus.Text        text,
                                             uint             cursor_pos,
@@ -39,12 +42,20 @@ public interface FbContext {
 }
 
 class IBusFbContext : GLib.InitiallyUnowned, FbContext {
+    private enum BindingState {
+        NO_BINDING = 0,
+        SINGLE_BINDING,
+        DOUBLE_BINDING,
+    }
+
     private GLib.Settings m_settings_general;
     private GLib.Settings m_settings_hotkey;
     private IBus.Bus m_bus;
     private IBus.InputContext m_ibuscontext;
     private GLib.List<Keybinding> m_bindings;
     private IBus.EngineDesc[] m_engines = {};
+    private bool m_is_escaped;
+    private BindingState m_is_binding;
 
     private class Keybinding {
         public Keybinding(uint32 keyval,
@@ -249,22 +260,81 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                                        uint       length,
                                        out uint32 keyval,
                                        out uint32 modifiers) {
-
         keyval = 0;
         modifiers = 0;
 
         GLib.return_val_if_fail(buff != null, false);
 
+        /* Escape key('\x1b') is used for terminal special keybindings
+         * in ibus-fbterm since compound shortcut keys does not work
+         * on terminal.
+         * E.g.
+         * Super+Shift+space is Escape, Super+space in ibus-fbterm.
+         * Control+Shift+u is Escape, Super+u in ibus-fbterm.
+         */
+        if (length == 1) {
+            char ch = buff.get(0);
+
+            /* Between Ctrl + a and Ctrl + z */
+            if ((ch >= '\x1' && ch <= '\x6') || (ch >= '\xe' && ch <= '\x1a')) {
+                keyval = (uint32)ch - (uint32)'\x1' + IBus.KEY_a;
+                modifiers = IBus.ModifierType.CONTROL_MASK;
+                if (m_is_escaped) {
+                    modifiers |= IBus.ModifierType.SHIFT_MASK;
+                    m_is_escaped = false;
+                }
+                return true;
+            }
+
+            switch(ch) {
+            case '\x1b':
+                m_is_escaped = !m_is_escaped;
+                keyval = IBus.KEY_Escape;
+                return true;
+            case 0x7f:
+                keyval = IBus.KEY_BackSpace;
+                if (m_is_escaped) {
+                    modifiers |= IBus.ModifierType.SHIFT_MASK;
+                    m_is_escaped = false;
+                }
+                return true;
+            case '\r':
+                keyval = IBus.KEY_Return;
+                if (m_is_escaped) {
+                    modifiers |= IBus.ModifierType.SHIFT_MASK;
+                    m_is_escaped = false;
+                }
+                return true;
+            case '\t':
+                keyval = IBus.KEY_Tab;
+                if (m_is_escaped) {
+                    modifiers |= IBus.ModifierType.SHIFT_MASK;
+                    m_is_escaped = false;
+                }
+                return true;
+            case '\0':
+                keyval = IBus.KEY_space;
+                modifiers = IBus.ModifierType.CONTROL_MASK;
+                if (m_is_escaped) {
+                    modifiers |= IBus.ModifierType.SHIFT_MASK;
+                    m_is_escaped = false;
+                }
+                return true;
+            default: break;
+            }
+        }
         if (length == 2 && buff.get(0) == '\x1b' && buff.get(1) == ' ') {
             keyval = IBus.KEY_space;
             modifiers = IBus.ModifierType.SUPER_MASK;
+            if (m_is_escaped) {
+                modifiers |= IBus.ModifierType.SHIFT_MASK;
+                m_is_escaped = false;
+            }
             return true;
         }
-        if (length == 1 && buff.get(0) == '\0') {
-            keyval = IBus.KEY_space;
-            modifiers = IBus.ModifierType.CONTROL_MASK;
-            return true;
-        }
+
+        if (m_is_escaped)
+            m_is_escaped = false;
 
         if (length < 3)
             return false;
@@ -351,37 +421,36 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
         return false;
     }
 
-    private void char_to_keyval(char       ch,
-                                out uint32 keyval,
-                                out uint32 modifiers) {
-        keyval = 0;
-        modifiers = 0;
-
-        switch (ch) {
-        case 0x1b:
-            keyval = IBus.KEY_Escape;
-            break;
-        case 0x7f:
-            keyval = IBus.KEY_BackSpace;
-            break;
-        case '\r':
-            keyval = IBus.KEY_Return;
-            break;
-        case '\t':
-            keyval = IBus.KEY_Tab;
-            break;
-        default:
-            keyval = ch;
-            break;
-        }
-    }
-
     private bool handle_engine_switch(uint32 keyval,
                                       uint32 modifiers) {
+        bool reverse = false;
+        uint32 binding_modifiers = modifiers;
+
+        /* Shift+space cannot be received on terminal so all shift-mask
+         * keys are reverse shortcut keys.
+         */
+        if ((binding_modifiers & IBus.ModifierType.SHIFT_MASK) != 0) {
+            reverse = true;
+            binding_modifiers &= ~IBus.ModifierType.SHIFT_MASK;
+        }
+
         foreach (var binding in m_bindings) {
-            if (binding.keyval == keyval && binding.modifiers == modifiers) {
-                if (m_engines.length > 1) {
-                    switch_engine(1);
+            if (binding.keyval == keyval &&
+                binding.modifiers == binding_modifiers) {
+                if (m_is_binding == BindingState.SINGLE_BINDING)
+                    m_is_binding = BindingState.DOUBLE_BINDING;
+                if (m_is_binding == BindingState.DOUBLE_BINDING) {
+                    if (!reverse)
+                        switcher_switch(m_engines, IBus.KEY_Right);
+                    else
+                        switcher_switch(m_engines, IBus.KEY_Left);
+                }
+                else if (m_engines.length > 1) {
+                    if (!reverse)
+                        switch_engine(1);
+                    else
+                        switch_engine(m_engines.length - 1);
+                    m_is_binding = BindingState.SINGLE_BINDING;
                 } else {
                     user_warning(
                             "Only one engine(%s) is configured so use ibus-setup or gsettings".
@@ -390,6 +459,38 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                 return true;
             }
         }
+
+        if (m_is_binding == BindingState.DOUBLE_BINDING) {
+            if (binding_modifiers == 0) {
+                if (keyval == IBus.KEY_Return || keyval == IBus.KEY_Escape) {
+                    int index = switcher_switch(m_engines, keyval);
+
+                    if (index >= 0)
+                        switch_engine(index);
+                    m_is_binding = BindingState.NO_BINDING;
+                    return true;
+                }
+                if (keyval == IBus.KEY_Left || keyval == IBus.KEY_Right) {
+                    switcher_switch(m_engines, keyval);
+                    return true;
+                }
+            }
+            if ((modifiers & IBus.ModifierType.CONTROL_MASK) != 0) {
+                if (keyval == IBus.KEY_b) {
+                    switcher_switch(m_engines, IBus.KEY_Left);
+                    return true;
+                }
+                if (keyval == IBus.KEY_f) {
+                    switcher_switch(m_engines, IBus.KEY_Right);
+                    return true;
+                }
+            }
+            switcher_switch(m_engines, IBus.KEY_Escape);
+            m_is_binding = BindingState.NO_BINDING;
+        } else {
+            m_is_binding = BindingState.NO_BINDING;
+        }
+
         return false;
     }
 
@@ -413,11 +514,15 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                 control_key_to_keyval(buff,
                                       length,
                                       out keyval,
-                                      out modifiers))
+                                      out modifiers)) {
                 is_control = true;
-            else
-                char_to_keyval(code, out keyval, out modifiers);
+            } else {
+                keyval = code;
+                if (m_is_binding != BindingState.DOUBLE_BINDING)
+                    m_is_binding = BindingState.NO_BINDING;
+            }
 
+            /* Terminal signal "\x1b[" should not be sent to IME */
             if (is_control && keyval == 0 && modifiers == 0) {
                 dispatched = null;
                 return 0;
@@ -426,6 +531,13 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
             if (is_control && handle_engine_switch(keyval, modifiers)) {
                 dispatched = null;
                 return 0;
+            }
+
+            /* Stop switcher if keymap is not binding keys when switcher
+             * is running. */
+            if (m_is_binding == BindingState.DOUBLE_BINDING) {
+                switcher_switch(m_engines, IBus.KEY_Escape);
+                m_is_binding = BindingState.NO_BINDING;
             }
 
             processed = m_ibuscontext.process_key_event(
@@ -439,8 +551,9 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                         dispatched = "";
                     else
                         dispatched = buff.substring(j, length);
+                    j = length;
                 }
-                i += length;
+                i = length;
             } else {
                 if (!processed) {
                     if (buff.get(0) == '\0')

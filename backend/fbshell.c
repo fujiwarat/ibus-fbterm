@@ -73,6 +73,7 @@ struct _FbShellPrivate {
     gchar          *lookup_table_end;
     int             lookup_table_x;
     int             lookup_table_y;
+    int             engine_index;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (FbShell,
@@ -101,12 +102,17 @@ static void         fb_shell_change_mode          (FbShell         *shell,
 static void         fb_shell_ready_read           (FbIo            *io,
                                                    const gchar     *buff,
                                                    guint            length);
+static void         fb_context_warning_cb         (FbContext       *context,
+                                                   const gchar     *message,
+                                                   FbShell         *shell);
 static void         fb_context_cursor_position_cb (FbContext       *context,
                                                    int              x,
                                                    int              y,
                                                    FbShell         *shell);
-static void         fb_context_warning_cb         (FbContext       *context,
-                                                   const gchar     *message,
+static int          fb_context_switcher_switch_cb (FbContext       *context,
+                                                   IBusEngineDesc **engines,
+                                                   int              length,
+                                                   guint32          keyval,
                                                    FbShell         *shell);
 static void         fb_context_commit_cb          (FbContext       *context,
                                                    IBusText        *text,
@@ -140,6 +146,9 @@ fb_shell_init (FbShell *shell)
                       shell,
                       "signal::cursor-position",
                       (GCallback)fb_context_cursor_position_cb,
+                      shell,
+                      "signal::switcher-switch",
+                      (GCallback)fb_context_switcher_switch_cb,
                       shell,
                       "signal::commit",
                       (GCallback)fb_context_commit_cb,
@@ -435,6 +444,55 @@ fb_shell_set_scrolling_region (FbShell *shell,
 }
 
 static void
+fb_shell_show_switcher (FbShell         *shell,
+                        IBusEngineDesc **engines)
+{
+    FbShellPrivate *priv;
+    int engine_index;
+    int i;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+    engine_index = priv->engine_index;
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, priv->size.ws_row, 0);
+    for (i = 0; engines[i] != NULL; i++) {
+        IBusEngineDesc *engine = engines[i];
+        const gchar *longname = ibus_engine_desc_get_longname (engine);
+        gchar *str;
+        if (i == 0)
+            str = g_strdup (longname);
+        else
+            str = g_strdup_printf (" %s", longname);
+        if (i == engine_index)
+            fb_shell_draw_inverse_color (shell);
+        WRITE_STR (STDIN_FILENO, str);
+        if (i == engine_index)
+            fb_shell_reset_color (shell);
+        g_free (str);
+    }
+    fb_shell_restore_cursor (shell);
+}
+
+static void
+fb_shell_erase_switcher (FbShell         *shell,
+                         IBusEngineDesc **engines)
+{
+    FbShellPrivate *priv;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, priv->size.ws_row, 0);
+    fb_shell_erase_cursor_line (shell);
+    fb_shell_restore_cursor (shell);
+}
+
+static void
 fb_shell_destroy (FbShell *shell)
 {
     FbShellPrivate *priv;
@@ -577,6 +635,50 @@ fb_context_cursor_position_cb (FbContext *context,
     fb_shell_reset_color (shell);
     WRITE_STR (STDOUT_FILENO, priv->lookup_table_end);
     fb_shell_restore_cursor (shell);
+}
+
+static int
+fb_context_switcher_switch_cb (FbContext         *context,
+                               IBusEngineDesc   **engines,
+                               int                length,
+                               guint32            keyval,
+                               FbShell           *shell)
+{
+    FbShellPrivate *priv;
+    int index;
+
+    g_return_val_if_fail (FB_IS_SHELL (shell), -1);
+    g_return_val_if_fail (engines != NULL, -1);
+
+    priv = shell->priv;
+    index = priv->engine_index;
+
+    switch (keyval) {
+    case IBUS_KEY_Escape:
+        priv->engine_index = 0;
+        fb_shell_erase_switcher (shell, engines);
+        return -1;
+    case IBUS_KEY_Left:
+        index--;
+        if (index < 0)
+            index = length -1;
+        priv->engine_index = index;
+        fb_shell_show_switcher (shell, engines);
+        return -1;
+    case IBUS_KEY_Right:
+        index++;
+        if (index >= length)
+            index = 0;
+        priv->engine_index = index;
+        fb_shell_show_switcher (shell, engines);
+        return -1;
+    case IBUS_KEY_Return:
+        priv->engine_index = 0;
+        fb_shell_erase_switcher (shell, engines);
+        return index;
+    default: break;
+    }
+    return -1;
 }
 
 static void
