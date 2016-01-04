@@ -2,6 +2,10 @@
 
 `hash fbterm /usr/libexec/ibus-fbterm-backend dbus-launch ibus-daemon` || exit 1
 
+# ibus-daemon could exit after ibus-fbterm-backend run
+# when 'ibus exit' was called.
+pkill -9 ibus-daemon
+
 TTY=`tty`
 
 TTY_NUM=${TTY#/dev/tty}
