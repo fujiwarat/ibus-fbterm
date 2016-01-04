@@ -47,6 +47,9 @@ only Escape key disables Hangul in ibus\-hangul by default.
 But I'd recommned to use Control\-space rather than Escape and space
 with ibus\-setup\-hangul because Escape key disables \fBvi\fR mode.
 
+.SH "XKB"
+ibus-fbterm runs \fBloadkeys(1)\fR command to set XKB keymaps internally.
+
 .SH "SETTINGS"
 .TP
 Show keybindings

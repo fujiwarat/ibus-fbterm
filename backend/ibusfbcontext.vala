@@ -52,6 +52,7 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
 
     private GLib.Settings m_settings_general;
     private GLib.Settings m_settings_hotkey;
+    private Loadkeys m_loadkeys;
     private IBus.Bus m_bus;
     private IBus.InputContext m_ibuscontext;
     private GLib.List<Keybinding> m_bindings;
@@ -78,6 +79,9 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
         m_settings_hotkey.changed["triggers"].connect((key) => {
                 bind_switch_shortcut();
         });
+
+        m_loadkeys = new Loadkeys();
+        m_loadkeys.user_warning.connect((s) => user_warning(s));
 
         /* If ibus-fbterm is launched before ibus-daemon creates
          * the socket path $HOME/.config/ibus/bus/foo,
@@ -135,6 +139,7 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
             return;
         }
 
+        m_loadkeys.set_layout(engine);
         state_changed(engine);
     }
 

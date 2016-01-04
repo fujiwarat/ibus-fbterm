@@ -1,7 +1,7 @@
 # vim:set noet ts=4:
 #
-# Copyright (c) 2015 Takao Fujiwara <takao.fujiwara1@gmail.com>
-# Copyright (c) 2015 Red Hat, Inc.
+# Copyright (c) 2015-2016 Takao Fujiwara <takao.fujiwara1@gmail.com>
+# Copyright (c) 2015-2016 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ ibus_fbterm_backend_SOURCES = \
     fbtty.c \
     fbtty.h \
     ibusfbcontext.vala \
+    loadkeys.vala \
     $(NULL)
 
 ibus_fbterm_backend_DEPENDENCIES = \
