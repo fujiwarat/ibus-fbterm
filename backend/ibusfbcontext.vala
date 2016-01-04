@@ -320,6 +320,15 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                     m_is_escaped = false;
                 }
                 return true;
+            case ' ':
+                if (m_is_escaped) {
+                    keyval = IBus.KEY_space;
+                    modifiers |= IBus.ModifierType.SHIFT_MASK;
+                    m_is_escaped = false;
+                    return true;
+                }
+                /* space without modifiers is not a control key. */
+                break;
             default: break;
             }
         }
