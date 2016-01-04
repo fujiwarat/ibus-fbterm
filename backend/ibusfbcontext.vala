@@ -1,8 +1,8 @@
 /* -*- mode: C; c-basic-offset: 4; indent-tabs-mode: nil; -*- */
 /* vim:set et sts=4: */
 /*
- * Copyright (C) 2015 Takao Fujiwara <takao.fujiwara1@gmail.com>
- * Copyright (C) 2015 Red Hat, Inc.
+ * Copyright (C) 2015-2016 Takao Fujiwara <takao.fujiwara1@gmail.com>
+ * Copyright (C) 2015-2016 Red Hat, Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,17 +27,19 @@ public interface FbContext {
                                             out string?      dispatched = null);
     public abstract void load_settings     ();
 
-    public signal void user_warning        (string           message);
-    public signal void cursor_position     (int              x,
+    public signal void   user_warning      (string           message);
+    public signal void   cursor_position   (int              x,
                                             int              y);
-    public signal int  switcher_switch     (IBus.EngineDesc[]
+    public signal int    switcher_switch   (IBus.EngineDesc[]
                                                              engines,
                                             uint32           keyval);
-    public signal void commit              (IBus.Text        text);
-    public signal void preedit_changed     (IBus.Text        text,
+    public signal uint32 keysym_to_keycode (uint32           keysym);
+    public signal void   commit            (IBus.Text        text);
+    public signal void   preedit_changed   (IBus.Text        text,
                                             uint             cursor_pos,
                                             bool             visible);
-    public signal void update_lookup_table (IBus.LookupTable table,
+    public signal void   update_lookup_table
+                                           (IBus.LookupTable table,
                                             bool             visible);
 }
 
@@ -513,7 +515,8 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
 
         uint j = 0;
         for (uint i = 0; i < length; i++) {
-            char code = buff.get(i);
+            char typed = buff.get(i);
+            uint32 keycode = 0;
             uint32 keyval = 0;
             uint32 modifiers = 0;
             bool is_control = false;
@@ -526,7 +529,7 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                                       out modifiers)) {
                 is_control = true;
             } else {
-                keyval = code;
+                keyval = typed;
                 if (m_is_binding != BindingState.DOUBLE_BINDING)
                     m_is_binding = BindingState.NO_BINDING;
             }
@@ -549,9 +552,13 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                 m_is_binding = BindingState.NO_BINDING;
             }
 
+            keycode = keysym_to_keycode (keyval);
+            if (keycode == 0)
+                keycode = typed;
+
             processed = m_ibuscontext.process_key_event(
                     keyval,
-                    code,
+                    keycode,
                     modifiers);
 
             if (is_control) {
@@ -575,7 +582,7 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
 
             m_ibuscontext.process_key_event(
                 keyval,
-                code,
+                keycode,
                 modifiers | IBus.ModifierType.RELEASE_MASK);
         }
 

@@ -1,8 +1,8 @@
 /* -*- mode: C; c-basic-offset: 4; indent-tabs-mode: nil; -*- */
 /* vim:set et sts=4: */
 /*
- * Copyright (C) 2015 Takao Fujiwara <takao.fujiwara1@gmail.com>
- * Copyright (C) 2015 Red Hat, Inc.
+ * Copyright (C) 2015-2016 Takao Fujiwara <takao.fujiwara1@gmail.com>
+ * Copyright (C) 2015-2016 Red Hat, Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,9 @@
 #include <string.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+
+#include <linux/kd.h>
+#include <linux/keyboard.h>
 
 #include "fbcontext.h"
 #include "fbshell.h"
@@ -74,6 +77,7 @@ struct _FbShellPrivate {
     int             lookup_table_x;
     int             lookup_table_y;
     int             engine_index;
+    guint32         keymap[NR_KEYS];
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (FbShell,
@@ -114,6 +118,10 @@ static int          fb_context_switcher_switch_cb (FbContext       *context,
                                                    int              length,
                                                    guint32          keyval,
                                                    FbShell         *shell);
+static guint32      fb_context_keysym_to_keycode_cb
+                                                  (FbContext       *context,
+                                                   guint32          keysym,
+                                                   FbShell         *shell);
 static void         fb_context_commit_cb          (FbContext       *context,
                                                    IBusText        *text,
                                                    FbShell         *shell);
@@ -149,6 +157,9 @@ fb_shell_init (FbShell *shell)
                       shell,
                       "signal::switcher-switch",
                       (GCallback)fb_context_switcher_switch_cb,
+                      shell,
+                      "signal::keysym-to-keycode",
+                      (GCallback)fb_context_keysym_to_keycode_cb,
                       shell,
                       "signal::commit",
                       (GCallback)fb_context_commit_cb,
@@ -298,6 +309,30 @@ wait_child_process_exit (int pid)
     if (retval <= 0) {
         kill (pid, SIGKILL);
         waitpid (pid, 0, 0);
+    }
+}
+
+static void
+fb_shell_load_keymap (FbShell *shell)
+{
+    FbShellPrivate *priv;
+    int keycode;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    memset (priv->keymap, 0, sizeof (guint32) * NR_KEYS);
+
+    for (keycode = 0; keycode < NR_KEYS; keycode++) {
+        struct kbentry entry;
+
+        entry.kb_table = 0;
+        entry.kb_index = keycode;
+        /* tty0 is needed to get keysyms instead of tty */
+        if (ioctl (priv->tty0_fd, KDGKBENT, &entry) < 0)
+            continue;
+        priv->keymap[keycode] = KVAL(entry.kb_value);
     }
 }
 
@@ -681,6 +716,26 @@ fb_context_switcher_switch_cb (FbContext         *context,
     return -1;
 }
 
+static guint32
+fb_context_keysym_to_keycode_cb (FbContext *context,
+                                 guint32    keysym,
+                                 FbShell   *shell)
+{
+    FbShellPrivate *priv;
+    guint32 keycode;
+
+    g_return_val_if_fail (FB_IS_SHELL (shell), 0);
+
+    priv = shell->priv;
+
+    for (keycode = 0; keycode < NR_KEYS; keycode++) {
+        if (priv->keymap[keycode] == keysym)
+            return keycode;
+    }
+
+    return 0;
+}
+
 static void
 fb_context_commit_cb (FbContext *context,
                       IBusText  *text,
@@ -903,11 +958,17 @@ fb_shell_switch_vt (FbShell *shell, gboolean enter, FbShell *peer)
     priv = shell->priv;
 
     if (priv->tty0_fd == -1)
-        priv->tty0_fd = open ("/dev/tty", O_RDWR);
+        priv->tty0_fd = open ("/dev/tty0", O_RDWR);
     if (priv->tty0_fd != -1) {
+        int tty_fd = -1;
+
         seteuid (0);
+
         /* Need tty instead of tty0 to get the right size. */
-        ioctl (priv->tty0_fd, TIOCGWINSZ, &priv->size);
+        tty_fd = open ("/dev/tty", O_RDONLY);
+        ioctl (tty_fd, TIOCGWINSZ, &priv->size);
+        close (tty_fd);
+
         fb_shell_set_scrolling_region (shell, 0, priv->size.ws_row - 1);
         ioctl (priv->tty0_fd, TIOCCONS, 0);
         if (enter) {
@@ -920,6 +981,7 @@ fb_shell_switch_vt (FbShell *shell, gboolean enter, FbShell *peer)
 
     if (enter) {
         fb_shell_mode_changed (shell, AllModes);
+        fb_shell_load_keymap (shell);
         if (priv->context != NULL) {
             FB_CONTEXT_GET_INTERFACE (priv->context)->load_settings(
                     FB_CONTEXT (priv->context));
