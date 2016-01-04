@@ -79,6 +79,19 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
                 bind_switch_shortcut();
         });
 
+        /* If ibus-fbterm is launched before ibus-daemon creates
+         * the socket path $HOME/.config/ibus/bus/foo,
+         * "connected" signal won't be called because null file
+         * is not monitored.
+         * This waits until max 3 seconds with the interval of 0.01 seconds.
+         * The average time is about 0.03 seconds.
+         */
+        for (int i = 0; i < 300; i++) {
+            if (IBus.get_address() != null)
+                break;
+            GLib.Thread.usleep(10000);
+        }
+
         m_bus = new IBus.Bus ();
         if (m_bus.is_connected())
             create_input_context();
@@ -127,7 +140,12 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
 
     private void switch_engine(int  i,
                                bool force = false) {
-        GLib.assert(i >= 0 && i < m_engines.length);
+        if (i < 0 || i >= m_engines.length) {
+            user_warning("Assertion switch_engine %d < %d".printf(
+                    i, m_engines.length));
+            Posix.sleep(3);
+            Posix.exit(-1);
+        }
 
         if (i == 0 && !force)
             return;

@@ -18,9 +18,7 @@ export DISPLAY=:9${TTY_NUM}.0
 
 ibus-daemon -p disable &
 
-fbterm "$@" &
-
-/usr/libexec/ibus-fbterm
+fbterm "$@" /usr/libexec/ibus-fbterm-backend
 
 ibus exit
 kill $DBUS_SESSION_BUS_PID
