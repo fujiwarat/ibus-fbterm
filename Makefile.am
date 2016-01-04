@@ -13,6 +13,11 @@ man_onedir = $(mandir)/man1
 %.1.gz: %.1
 	$(AM_V_GEN) gzip -c $< > $@.tmp && mv $@.tmp $@
 
+dist-hook:
+	if test -d .git ; then \
+	    git log --name-status --date=iso > $(distdir)/ChangeLog ; \
+	fi
+
 EXTRA_DIST = \
     $(man_one_in_files) \
     ibus-fbterm \
