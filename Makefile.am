@@ -1,4 +1,24 @@
 SUBDIRS = backend
 
 bin_SCRIPTS = ibus-fbterm
-EXTRA_DIST = ibus-fbterm
+
+man_one_in_files = ibus-fbterm.1.in
+man_one_files = $(man_one_in_files:.1.in=.1)
+man_one_DATA =$(man_one_files:.1=.1.gz)
+man_onedir = $(mandir)/man1
+%.1: %.1.in
+	$(AM_V_GEN) sed \
+	    -e 's|@VERSION[@]|$(VERSION)|g' $< > $@.tmp && \
+	    mv $@.tmp $@
+%.1.gz: %.1
+	$(AM_V_GEN) gzip -c $< > $@.tmp && mv $@.tmp $@
+
+EXTRA_DIST = \
+    $(man_one_in_files) \
+    ibus-fbterm \
+    $(NULL)
+
+CLEANFILES = \
+    $(man_one_DATA) \
+    $(man_one_files) \
+    $(NULL)

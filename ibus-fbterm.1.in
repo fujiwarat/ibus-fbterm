@@ -1,0 +1,47 @@
+.\" This file is distributed under the same license as the ibus
+.\" package.
+.\" Copyright (C) Takao Fujiwara <takao.fujiwara1@gmail.com>, 2016.
+.\"
+.TH "IBUS\-FBTERM" 1 "Jan 2016" "@VERSION@" "User Commands"
+.SH NAME
+.B ibus\-fbterm
+\- IBus front\-end for FbTerm
+
+.SH "DESCRIPTION"
+
+.PP
+ibus\-fbterm is an input method for FbTerm based on IBus.
+
+.PP
+This is a wrapper to run dbus\-daemon, ibus\-daemon, fbterm and
+ibus\-fbterm\-backend.
+
+.PP
+Homepage: https://github.com/ibus/ibus/wiki
+
+.SH "KEY BINDING"
+The recent ibus\-fbterm no longer uses the protocol of fbterm because
+fbterm would bind Control\-space focibly and now the private header files
+are not used to communicate between fbterm and ibus\-fbterm\-backend.
+
+.PP
+The default keybinding is Super\-space to switch ibus engines.
+Most keybdings would not work due to VT100 keybindings.
+Super\-space and Control\-space are tested to work fine.
+The Super\-space switches the first two IMEs only.  To show 
+IBus IME switcher panel is \fBdouble\fR Super\-space keys.
+The reverse switching keybinding is Escape and Super\-space keys.
+Shift\-Super\-space would not work due to VT100 keybindings and
+Escape key is used for the Shift binding in ibus\-fbterm.
+.TP
+Show keybindings
+.TP
+\fBgsettings get org.freedesktop.ibus.general.hotkey triggers\fR
+.TP
+Show selectable IMEs
+.TP
+\fBgsettings get org.freedesktop.ibus.general preload-engines\fR
+.TP
+
+.SH BUGS
+If you find a bug, please report it at https://github.com/fujiwarat/ibus-fbterm/issues
