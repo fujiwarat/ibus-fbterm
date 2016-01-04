@@ -34,6 +34,8 @@ public interface FbContext {
                                                              engines,
                                             uint32           keyval);
     public signal uint32 keysym_to_keycode (uint32           keysym);
+    public signal void   engine_changed    (IBus.EngineDesc  engine);
+
     public signal void   commit            (IBus.Text        text);
     public signal void   preedit_changed   (IBus.Text        text,
                                             uint             cursor_pos,
@@ -41,6 +43,9 @@ public interface FbContext {
     public signal void   update_lookup_table
                                            (IBus.LookupTable table,
                                             bool             visible);
+    public signal void   register_properties
+                                           (IBus.PropList    props);
+    public signal void   update_property   (IBus.Property    prop);
 }
 
 class IBusFbContext : GLib.InitiallyUnowned, FbContext {
@@ -103,9 +108,11 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
         m_bus.connected.connect((bus) => {
             create_input_context();
         });
+
+        this.engine_changed.connect(engine_changed_cb);
     }
 
-    private void state_changed(IBus.EngineDesc engine) {
+    private void engine_changed_cb(IBus.EngineDesc engine) {
         int i;
         for (i = 0; i < m_engines.length; i++) {
             if (m_engines[i].get_name() == engine.get_name())
@@ -140,7 +147,7 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
         }
 
         m_loadkeys.set_layout(engine);
-        state_changed(engine);
+        engine_changed(engine);
     }
 
     private void switch_engine(int  i,
@@ -259,6 +266,8 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
         m_ibuscontext.commit_text.connect(commit_text_cb);
         m_ibuscontext.update_preedit_text.connect(update_preedit_text_cb);
         m_ibuscontext.update_lookup_table.connect(update_lookup_table_cb);
+        m_ibuscontext.register_properties.connect(register_properties_cb);
+        m_ibuscontext.update_property.connect(update_property_cb);
         m_ibuscontext.set_capabilities(IBus.Capabilite.AUXILIARY_TEXT |
                                        IBus.Capabilite.LOOKUP_TABLE |
                                        IBus.Capabilite.PROPERTY |
@@ -279,6 +288,14 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
     private void update_lookup_table_cb(IBus.LookupTable table,
                                         bool             visible) {
         update_lookup_table(table, visible);
+    }
+
+    private void register_properties_cb(IBus.PropList props) {
+        register_properties(props);
+    }
+
+    private void update_property_cb(IBus.Property prop) {
+        update_property(prop);
     }
 
     private bool control_key_to_keyval(string?    buff,

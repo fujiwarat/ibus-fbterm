@@ -62,6 +62,11 @@ enum {
     PROP_FBTERM
 };
 
+typedef struct {
+    gchar *key;
+    gchar *label;
+} StatusLabel;
+
 struct _FbShellPrivate {
     int             pid;
     gboolean        first_shell;
@@ -76,8 +81,10 @@ struct _FbShellPrivate {
     gchar          *lookup_table_end;
     int             lookup_table_x;
     int             lookup_table_y;
-    int             engine_index;
+    int             switcher_engine_index;
     guint32         keymap[NR_KEYS];
+    StatusLabel   **status_label;
+    gchar          *engine_name;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (FbShell,
@@ -122,6 +129,9 @@ static guint32      fb_context_keysym_to_keycode_cb
                                                   (FbContext       *context,
                                                    guint32          keysym,
                                                    FbShell         *shell);
+static void         fb_context_engine_changed_cb  (FbContext       *context,
+                                                   IBusEngineDesc  *engine,
+                                                   FbShell         *shell);
 static void         fb_context_commit_cb          (FbContext       *context,
                                                    IBusText        *text,
                                                    FbShell         *shell);
@@ -134,6 +144,14 @@ static void         fb_context_update_lookup_table_cb
                                                   (FbContext       *context,
                                                    IBusLookupTable *table,
                                                    gboolean        *visible,
+                                                   FbShell         *shell);
+static void         fb_context_register_properties_cb
+                                                  (FbContext       *context,
+                                                   IBusPropList    *props,
+                                                   FbShell         *shell);
+static void         fb_context_update_property_cb
+                                                  (FbContext       *context,
+                                                   IBusProperty    *prop,
                                                    FbShell         *shell);
 
 static void
@@ -161,6 +179,9 @@ fb_shell_init (FbShell *shell)
                       "signal::keysym-to-keycode",
                       (GCallback)fb_context_keysym_to_keycode_cb,
                       shell,
+                      "signal::engine-changed",
+                      (GCallback)fb_context_engine_changed_cb,
+                      shell,
                       "signal::commit",
                       (GCallback)fb_context_commit_cb,
                       shell,
@@ -169,6 +190,12 @@ fb_shell_init (FbShell *shell)
                       shell,
                       "signal::update-lookup-table",
                       (GCallback)fb_context_update_lookup_table_cb,
+                      shell,
+                      "signal::register-properties",
+                      (GCallback)fb_context_register_properties_cb,
+                      shell,
+                      "signal::update-property",
+                      (GCallback)fb_context_update_property_cb,
                       shell,
                       NULL);
 }
@@ -489,7 +516,7 @@ fb_shell_show_switcher (FbShell         *shell,
     g_return_if_fail (FB_IS_SHELL (shell));
 
     priv = shell->priv;
-    engine_index = priv->engine_index;
+    engine_index = priv->switcher_engine_index;
 
     fb_shell_save_cursor (shell);
     fb_shell_move_cursor (shell, priv->size.ws_row, 0);
@@ -686,29 +713,29 @@ fb_context_switcher_switch_cb (FbContext         *context,
     g_return_val_if_fail (engines != NULL, -1);
 
     priv = shell->priv;
-    index = priv->engine_index;
+    index = priv->switcher_engine_index;
 
     switch (keyval) {
     case IBUS_KEY_Escape:
-        priv->engine_index = 0;
+        priv->switcher_engine_index = 0;
         fb_shell_erase_switcher (shell, engines);
         return -1;
     case IBUS_KEY_Left:
         index--;
         if (index < 0)
             index = length -1;
-        priv->engine_index = index;
+        priv->switcher_engine_index = index;
         fb_shell_show_switcher (shell, engines);
         return -1;
     case IBUS_KEY_Right:
         index++;
         if (index >= length)
             index = 0;
-        priv->engine_index = index;
+        priv->switcher_engine_index = index;
         fb_shell_show_switcher (shell, engines);
         return -1;
     case IBUS_KEY_Return:
-        priv->engine_index = 0;
+        priv->switcher_engine_index = 0;
         fb_shell_erase_switcher (shell, engines);
         return index;
     default: break;
@@ -734,6 +761,29 @@ fb_context_keysym_to_keycode_cb (FbContext *context,
     }
 
     return 0;
+}
+
+static void
+fb_context_engine_changed_cb (FbContext      *context,
+                              IBusEngineDesc *engine,
+                              FbShell        *shell)
+{
+    FbShellPrivate *priv;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    g_free (priv->engine_name);
+    priv->engine_name = g_strdup (ibus_engine_desc_get_longname (engine));
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, priv->size.ws_row, 0);
+    fb_shell_erase_cursor_line (shell);
+    fb_shell_draw_inverse_color (shell);
+    WRITE_STR (STDOUT_FILENO, priv->engine_name);
+    fb_shell_reset_color (shell);
+    fb_shell_restore_cursor (shell);
 }
 
 static void
@@ -908,6 +958,142 @@ fb_context_update_lookup_table_cb (FbContext       *context,
     priv->lookup_table_middle = g_string_free (candidate_list_middle, FALSE);
     priv->lookup_table_end = g_string_free (candidate_list_end, FALSE);
     fb_shell_get_cursor (shell);
+}
+
+static void
+fb_context_register_properties_cb (FbContext    *context,
+                                   IBusPropList *props,
+                                   FbShell      *shell)
+{
+    FbShellPrivate *priv;
+    int i;
+    GString *str = NULL;
+    gchar *status_line = NULL;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    if (priv->status_label) {
+        for (i = 0; priv->status_label[i]; i++) {
+            g_free (priv->status_label[i]->key);
+            g_free (priv->status_label[i]->label);
+            g_free (priv->status_label[i]);
+        }
+        g_free (priv->status_label);
+        priv->status_label = NULL;
+    }
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, priv->size.ws_row, 0);
+    fb_shell_erase_cursor_line (shell);
+    if (priv->engine_name != NULL) {
+        fb_shell_draw_inverse_color (shell);
+        WRITE_STR (STDOUT_FILENO, priv->engine_name);
+        fb_shell_reset_color (shell);
+    }
+
+    for (i = 0; ; i++) {
+        IBusProperty *prop = ibus_prop_list_get (props, i);
+        if (prop == NULL)
+            break;
+    }
+
+    if (i == 0)
+        goto reset_cursor;
+
+    priv->status_label = g_new0 (StatusLabel*, i + 1);
+
+    for (i = 0; ; i++) {
+        IBusProperty *prop = ibus_prop_list_get (props, i);
+        IBusText *text;
+
+        if (prop == NULL)
+            break;
+
+        priv->status_label[i] = g_new0 (StatusLabel, 1);
+        priv->status_label[i]->key = g_strdup (ibus_property_get_key (prop));
+
+        text = ibus_property_get_label (prop);
+        priv->status_label[i]->label = g_strdup (text->text);
+        if (!str)
+            str = g_string_new ("");
+        str = g_string_append_c (str, ' ');
+        str = g_string_append (str, text->text);
+    }
+
+    if (!str)
+        goto reset_cursor;
+
+    status_line = g_string_free (str, FALSE);
+
+    WRITE_STR (STDIN_FILENO, status_line);
+    g_free (status_line);
+
+reset_cursor:
+    fb_shell_restore_cursor (shell);
+    return;
+}
+
+static void
+fb_context_update_property_cb (FbContext    *context,
+                               IBusProperty *prop,
+                               FbShell      *shell)
+{
+    FbShellPrivate *priv;
+    IBusText *text;
+    const gchar *key;
+    int i;
+    GString *str = NULL;
+    gchar *status_line = NULL;
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    priv = shell->priv;
+
+    fb_shell_save_cursor (shell);
+    fb_shell_move_cursor (shell, priv->size.ws_row, 0);
+    fb_shell_erase_cursor_line (shell);
+    if (priv->engine_name != NULL) {
+        fb_shell_draw_inverse_color (shell);
+        WRITE_STR (STDOUT_FILENO, priv->engine_name);
+        fb_shell_reset_color (shell);
+    }
+
+    text = ibus_property_get_label (prop);
+    key = ibus_property_get_key (prop);
+
+    if (!priv->status_label) {
+        priv->status_label = g_new0 (StatusLabel*, 2);
+        priv->status_label[0] = g_new0 (StatusLabel, 1);
+        priv->status_label[0]->key = g_strdup (key);
+        priv->status_label[0]->label = g_strdup (text->text);
+        str = g_string_new (" ");
+        str = g_string_append (str, text->text);
+    } else {
+        for (i = 0; priv->status_label[i]; i++) {
+            if (g_strcmp0 (priv->status_label[i]->key, key) == 0) {
+                g_free (priv->status_label[i]->label);
+                priv->status_label[i]->label = g_strdup (text->text);
+            }
+            if (!str)
+                str = g_string_new ("");
+            str = g_string_append_c (str, ' ');
+            str = g_string_append (str, priv->status_label[i]->label);
+        }
+    }
+
+    if (!str) {
+        fb_shell_restore_cursor (shell);
+        return;
+    }
+
+    status_line = g_string_free (str, FALSE);
+
+    WRITE_STR (STDIN_FILENO, status_line);
+    g_free (status_line);
+
+    fb_shell_restore_cursor (shell);
 }
 
 FbShell *
