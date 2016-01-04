@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.61])
-AC_INIT([ibus-fbterm], [0.99.0],
+AC_INIT([ibus-fbterm], [1.0.0],
         [https://github.com/fujiwarat/ibus-fbterm/issues],
         [ibus-fbterm])
 AM_INIT_AUTOMAKE

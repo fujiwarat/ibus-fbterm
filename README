@@ -4,3 +4,6 @@ Usage:
 1. make sure ibus works for you in X Desktop envirnonment
 2. compile and install ibus-fbterm
 3. execute 'ibus-fbterm [fbterm-options]'
+
+Bug report:
+https://github.com/fujiwarat/ibus-fbterm/issues
