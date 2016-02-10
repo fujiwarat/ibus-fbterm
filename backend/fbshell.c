@@ -153,6 +153,12 @@ static void         fb_context_update_property_cb
                                                   (FbContext       *context,
                                                    IBusProperty    *prop,
                                                    FbShell         *shell);
+static void         fb_context_forward_key_event_cb
+                                                  (FbContext       *context,
+                                                   guint            keyval,
+                                                   guint            keycode,
+                                                   guint            state,
+                                                   FbShell         *shell);
 
 static void
 fb_shell_init (FbShell *shell)
@@ -196,6 +202,9 @@ fb_shell_init (FbShell *shell)
                       shell,
                       "signal::update-property",
                       (GCallback)fb_context_update_property_cb,
+                      shell,
+                      "signal::forward-key-event",
+                      (GCallback)fb_context_forward_key_event_cb,
                       shell,
                       NULL);
 }
@@ -1094,6 +1103,21 @@ fb_context_update_property_cb (FbContext    *context,
     g_free (status_line);
 
     fb_shell_restore_cursor (shell);
+}
+
+static void
+fb_context_forward_key_event_cb (FbContext    *context,
+                                 guint         keyval,
+                                 guint         keycode,
+                                 guint         state,
+                                 FbShell      *shell)
+{
+    static gchar buff[1];
+
+    g_return_if_fail (FB_IS_SHELL (shell));
+
+    buff[0] = (gchar) keyval;
+    fb_io_write (FB_IO (shell), buff, 1);
 }
 
 FbShell *

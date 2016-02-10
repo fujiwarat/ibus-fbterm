@@ -46,6 +46,9 @@ public interface FbContext {
     public signal void   register_properties
                                            (IBus.PropList    props);
     public signal void   update_property   (IBus.Property    prop);
+    public signal void   forward_key_event (uint             keyval,
+                                            uint             keycode,
+                                            uint             state);
 }
 
 class IBusFbContext : GLib.InitiallyUnowned, FbContext {
@@ -268,6 +271,7 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
         m_ibuscontext.update_lookup_table.connect(update_lookup_table_cb);
         m_ibuscontext.register_properties.connect(register_properties_cb);
         m_ibuscontext.update_property.connect(update_property_cb);
+        m_ibuscontext.forward_key_event.connect(forward_key_event_cb);
         m_ibuscontext.set_capabilities(IBus.Capabilite.AUXILIARY_TEXT |
                                        IBus.Capabilite.LOOKUP_TABLE |
                                        IBus.Capabilite.PROPERTY |
@@ -296,6 +300,12 @@ class IBusFbContext : GLib.InitiallyUnowned, FbContext {
 
     private void update_property_cb(IBus.Property prop) {
         update_property(prop);
+    }
+
+    private void forward_key_event_cb(uint keyval,
+                                      uint keycode,
+                                      uint state) {
+        forward_key_event(keyval, keycode, state);
     }
 
     private bool control_key_to_keyval(string?    buff,
