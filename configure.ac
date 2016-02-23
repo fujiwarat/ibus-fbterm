@@ -9,6 +9,8 @@ AM_INIT_AUTOMAKE
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
+AS_VERSION
+AS_NANO
 AC_PROG_CC
 AM_PROG_CC_C_O
 AM_PROG_VALAC([0.20])
@@ -28,5 +30,6 @@ PKG_CHECK_MODULES([IBUS], [ibus-1.0 >= 1.5.0])
 AC_CONFIG_FILES([Makefile
 ibus-fbterm.spec
 backend/Makefile
+m4/Makefile
 ])
 AC_OUTPUT
