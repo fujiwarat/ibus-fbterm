@@ -21,6 +21,7 @@ dist-hook:
 EXTRA_DIST = \
     $(man_one_in_files) \
     ibus-fbterm \
+    ibus-fbterm.spec.in \
     $(NULL)
 
 CLEANFILES = \

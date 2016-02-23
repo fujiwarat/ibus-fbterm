@@ -14,11 +14,19 @@ AM_PROG_CC_C_O
 AM_PROG_VALAC([0.20])
 PKG_PROG_PKG_CONFIG
                                           
+# For dislpay Date
+m4_define(ibus_datedisplay,
+    m4_esyscmd(date '+%a %b %d %Y' | tr -d '\n\r'))
+DATE_DISPLAY="ibus_datedisplay"
+AC_SUBST(DATE_DISPLAY)
+
 # Checks for libraries.
 AM_PATH_GLIB_2_0
 PKG_CHECK_MODULES([GLIB2], [glib-2.0 >= 2.32.0])
 PKG_CHECK_MODULES([IBUS], [ibus-1.0 >= 1.5.0])
 
 AC_CONFIG_FILES([Makefile
-backend/Makefile])
+ibus-fbterm.spec
+backend/Makefile
+])
 AC_OUTPUT

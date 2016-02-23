@@ -1,0 +1,39 @@
+Name:       ibus-fbterm
+Version:    @PACKAGE_VERSION@
+Release:    1%{?dist}
+Summary:    IBus front-end for fbterm
+License:    GPLv3
+Group:      Applications/System
+URL:        https://github.com/fujiwarat/ibus-fbterm
+Source0:    https://github.com/fujiwarat/ibus-fbterm/releases/download/%{version}/%{name}-%{version}.tar.gz
+
+Requires:         ibus >= 1.5, fbterm >= 1.6
+BuildRequires:    ibus >= 1.5, ibus-devel >= 1.5
+
+%description
+ibus-fbterm is a input method for FbTerm based on IBus.
+
+* To utilize framebuffer, user should be added into 'video' group, or install
+  fbterm-udevrules package.
+
+%prep
+%setup -q
+
+%build
+%configure \
+    --prefix=%{_prefix}
+%__make %{?_smp_mflags}
+
+%install
+%__make install DESTDIR=$RPM_BUILD_ROOT INSTALL='install -p'
+
+%files
+%doc AUTHORS COPYING README
+%{_bindir}/ibus-fbterm
+%{_libexecdir}/ibus-fbterm-backend
+%{_mandir}/man1/*
+#%{_datadir}
+
+%changelog
+* @DATE_DISPLAY@ Takao Fujiwara <tfujiwar@redhat.com> - @PACKAGE_VERSION@-1
+- Current version.
