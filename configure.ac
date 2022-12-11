@@ -9,6 +9,7 @@ AM_INIT_AUTOMAKE
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
+m4_pattern_allow([^AS_(VERSION|NANO)$])
 AS_VERSION
 AS_NANO
 AC_PROG_CC
