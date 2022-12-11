@@ -7,6 +7,7 @@ AC_INIT([ibus-fbterm], [1.0.1],
         [ibus-fbterm])
 AM_INIT_AUTOMAKE
 AC_CONFIG_HEADERS([config.h])
+AC_USE_SYSTEM_EXTENSIONS
 
 # Checks for programs.
 m4_pattern_allow([^AS_(VERSION|NANO)$])
