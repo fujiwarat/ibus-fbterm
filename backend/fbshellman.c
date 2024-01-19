@@ -83,7 +83,7 @@ fb_shell_manager_get_index (FbShellManager *shell_manager,
     FbShellManagerPrivate *priv;
     int index, temp, i;
 
-    g_return_if_fail (FB_IS_SHELL_MANAGER (shell_manager));
+    g_return_val_if_fail (FB_IS_SHELL_MANAGER (shell_manager), 0);
 
 #define STEP() do { \
     if (forward) temp++; \
@@ -269,7 +269,7 @@ fb_shell_manager_child_process_exited (FbShellManager *shell_manager,
 FbShell *
 fb_shell_manager_active_shell (FbShellManager *shell_manager)
 {
-    g_return_if_fail (FB_IS_SHELL_MANAGER (shell_manager));
+    g_return_val_if_fail (FB_IS_SHELL_MANAGER (shell_manager), NULL);
 
     return shell_manager->priv->active_shell;
 }

@@ -206,7 +206,7 @@ fb_io_new (void)
 int
 fb_io_get_fd (FbIo *io)
 {
-    g_return_if_fail (FB_IS_IO (io));
+    g_return_val_if_fail (FB_IS_IO (io), -1);
     return io->priv->fd;
 }
 
